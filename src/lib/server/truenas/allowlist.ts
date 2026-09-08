@@ -96,10 +96,10 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	// ── storage / pools reads (§5.5) ─────────────────────────────────────────
 	'pool.query': { tier: 'read', verified: true },
 	'zpool.query': { tier: 'read' },
+	'boot.get_state': { tier: 'read', verified: true },
 	'pool.scrub.query': { tier: 'read' },
 	'pool.get_disks': { tier: 'read' },
-	'boot.get_state': { tier: 'read' },
-	'disk.query': { tier: 'read' },
+	'disk.query': { tier: 'read', verified: true },
 	'disk.details': { tier: 'read' },
 	'disk.temperatures': { tier: 'read' },
 	'disk.temperature_agg': { tier: 'read' },
@@ -109,7 +109,13 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'pool.scan': { tier: 'read' },
 
 	// ── storage: tier 2 ──────────────────────────────────────────────────────
-	'pool.scrub.run': { tier: 2, job: true },
+	// §5.5 names pool.scrub.run, which is deliberately NOT listed: it is not a
+	// job (this map had it wrong) and it silently does nothing unless the last
+	// scrub is older than its 35-day threshold, so a "start scrub" button built
+	// on it would read as broken. pool.scrub.scrub is the verified job that
+	// starts, stops or pauses one on demand. Both are deprecated in 26.0 in
+	// favour of zpool.scrub.run, which v25.10 does not document.
+	'pool.scrub.scrub': { tier: 2, job: true, verified: true },
 
 	// ── datasets reads (§5.6) ────────────────────────────────────────────────
 	'pool.dataset.query': { tier: 'read' },

@@ -10,6 +10,7 @@ import type { CollectionUpdate } from '$lib/server/truenas';
  *   app      { msg, id, fields }    an app.query change (state, updates, …)
  *   job      { id, method, state, progress }   a core.get_jobs change
  *   realtime { ... }               system CPU/memory/network, dashboard only
+ *   scan     { name, scan }         scrub/resilver progress, storage only
  *
  * reporting.realtime is opt-in via ?realtime=1 because it is a firehose that
  * arrives every second whether anyone is looking or not. The Apps tab has no
@@ -18,11 +19,13 @@ import type { CollectionUpdate } from '$lib/server/truenas';
  */
 export const GET: RequestHandler = async ({ url }) => {
 	const wantRealtime = url.searchParams.get('realtime') === '1';
+	const wantScan = url.searchParams.get('scan') === '1';
 	const encoder = new TextEncoder();
 	let closed = false;
 	let unsubApp: (() => void) | undefined;
 	let unsubJob: (() => void) | undefined;
 	let unsubRealtime: (() => void) | undefined;
+	let unsubScan: (() => void) | undefined;
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
 
 	const stream = new ReadableStream({
@@ -63,6 +66,13 @@ export const GET: RequestHandler = async ({ url }) => {
 					});
 				});
 
+				// Scrub/resilver progress, for the Storage tab only (§5.5).
+				if (wantScan) {
+					unsubScan = client.subscribe('pool.scan', (u: CollectionUpdate) => {
+						send('scan', u.fields ?? {});
+					});
+				}
+
 				if (wantRealtime) {
 					unsubRealtime = client.subscribe('reporting.realtime', (u: CollectionUpdate) => {
 						send('realtime', u.fields ?? {});
@@ -87,6 +97,8 @@ export const GET: RequestHandler = async ({ url }) => {
 				unsubApp?.();
 				unsubJob?.();
 				unsubRealtime?.();
+			unsubScan?.();
+				unsubScan?.();
 				if (heartbeat) clearInterval(heartbeat);
 				try {
 					controller.close();

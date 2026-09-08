@@ -4,6 +4,10 @@
  */
 import type { TrueNasClient } from './truenas/client.ts';
 
+// pool.query lives in storage.ts (§5.5) so there is one home for it; the
+// dashboard needs it only to merge health onto the live capacity figures.
+export { listPools, type PoolEntry } from './storage.ts';
+
 /**
  * system.info — verified: no parameters; not a job.
  *
@@ -81,35 +85,6 @@ export type UpdateStatus = {
 
 export function updateStatus(client: TrueNasClient): Promise<UpdateStatus> {
 	return client.call<UpdateStatus>('update.status', []);
-}
-
-/**
- * pool.query — verified: optional [filters, options]; not a job.
- *
- * Note the documented types: `fragmentation` is a *string* percentage, and
- * size / allocated / free are nullable integers. Capacity for the live gauges
- * comes from reporting.realtime instead; what this adds is health — `status`,
- * `healthy`, `warning` and any running scrub — which the realtime feed has no
- * equivalent for.
- */
-export type PoolEntry = {
-	id: number;
-	name: string;
-	/** Free string in the docs; ONLINE / DEGRADED / FAULTED are examples. */
-	status: string;
-	healthy: boolean;
-	warning: boolean;
-	status_code: string | null;
-	status_detail: string | null;
-	size: number | null;
-	allocated: number | null;
-	free: number | null;
-	fragmentation: string | null;
-	scan: { function?: string; state?: string; percentage?: number } | null;
-};
-
-export function listPools(client: TrueNasClient): Promise<PoolEntry[]> {
-	return client.call<PoolEntry[]>('pool.query', []);
 }
 
 /** core.get_jobs, narrowed to what's still in flight (§5.4). */

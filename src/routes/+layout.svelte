@@ -33,7 +33,7 @@
 	const tabs = [
 		{ href: '/', label: 'Apps', icon: 'apps', enabled: true },
 		{ href: '/dashboard', label: 'Dash', icon: 'dash', enabled: true },
-		{ href: '/storage', label: 'Storage', icon: 'storage', enabled: false },
+		{ href: '/storage', label: 'Storage', icon: 'storage', enabled: true },
 		{ href: '/datasets', label: 'Data', icon: 'data', enabled: false }
 	];
 
