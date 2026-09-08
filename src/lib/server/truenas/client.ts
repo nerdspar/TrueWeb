@@ -101,6 +101,7 @@ export class TrueNasClient {
 	private reconnectTimer?: ReturnType<typeof setTimeout>;
 	private firstReady?: Deferred<AuthMe>;
 	private me?: AuthMe;
+	private sniHintShown = false;
 
 	private readonly jobsHandler: SubscriptionHandler = (u) => this.onJobUpdate(u);
 
@@ -228,7 +229,17 @@ export class TrueNasClient {
 		});
 		ws.on('message', (data) => this.onMessage(data));
 		ws.on('close', (code, reason) => this.onClose(code, reason.toString()));
-		ws.on('error', (err) => this.log.warn(`socket error: ${err.message}`));
+		ws.on('error', (err) => {
+			this.log.warn(`socket error: ${err.message}`);
+			if (!this.sniHintShown && /unrecognized name|alert number 112/i.test(err.message)) {
+				this.sniHintShown = true;
+				this.log.warn(
+					'the server rejected the TLS handshake for a missing/unrecognized SNI. ' +
+						'It is fronted by a proxy or an nginx that requires a known server name. ' +
+						'Set TRUENAS_TLS_SERVERNAME to the hostname the box answers to (e.g. its FQDN).'
+				);
+			}
+		});
 	}
 
 	private async onOpen(): Promise<void> {
