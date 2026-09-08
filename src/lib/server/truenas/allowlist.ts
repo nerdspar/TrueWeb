@@ -85,16 +85,16 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'docker.state': { tier: 'read', verified: true },
 
 	// ── alerts ───────────────────────────────────────────────────────────────
-	'alert.list': { tier: 'read' },
-	'alert.dismiss': { tier: 1 },
+	'alert.list': { tier: 'read', verified: true },
+	'alert.dismiss': { tier: 1, verified: true },
 
 	// ── dashboard reads (§5.4) ───────────────────────────────────────────────
-	'system.info': { tier: 'read' },
+	'system.info': { tier: 'read', verified: true },
 	'webui.main.dashboard.sys_info': { tier: 'read' },
-	'update.status': { tier: 'read' },
+	'update.status': { tier: 'read', verified: true },
 
 	// ── storage / pools reads (§5.5) ─────────────────────────────────────────
-	'pool.query': { tier: 'read' },
+	'pool.query': { tier: 'read', verified: true },
 	'zpool.query': { tier: 'read' },
 	'pool.scrub.query': { tier: 'read' },
 	'pool.get_disks': { tier: 'read' },
@@ -103,6 +103,10 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'disk.details': { tier: 'read' },
 	'disk.temperatures': { tier: 'read' },
 	'disk.temperature_agg': { tier: 'read' },
+	// Events (§3.4). reporting.realtime is a firehose, so it is subscribed only
+	// while a dashboard is actually open — see api/stream.
+	'reporting.realtime': { tier: 'read', verified: true },
+	'pool.scan': { tier: 'read' },
 
 	// ── storage: tier 2 ──────────────────────────────────────────────────────
 	'pool.scrub.run': { tier: 2, job: true },

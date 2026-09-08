@@ -6,15 +6,23 @@ import type { CollectionUpdate } from '$lib/server/truenas';
  * Server-sent events (§4.3). One stream per browser, all fed from the single
  * middleware subscription the backend already holds — no per-client sockets.
  * Events:
- *   hello  { ready }              once, on connect
- *   app    { msg, id, fields }    an app.query change (state, updates, …)
- *   job    { id, method, state, progress }   a core.get_jobs change
+ *   hello    { ready }              once, on connect
+ *   app      { msg, id, fields }    an app.query change (state, updates, …)
+ *   job      { id, method, state, progress }   a core.get_jobs change
+ *   realtime { ... }               system CPU/memory/network, dashboard only
+ *
+ * reporting.realtime is opt-in via ?realtime=1 because it is a firehose that
+ * arrives every second whether anyone is looking or not. The Apps tab has no
+ * use for it, and the client ref-counts subscriptions — so gating it here means
+ * the middleware is not asked for it at all unless a dashboard is open.
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ url }) => {
+	const wantRealtime = url.searchParams.get('realtime') === '1';
 	const encoder = new TextEncoder();
 	let closed = false;
 	let unsubApp: (() => void) | undefined;
 	let unsubJob: (() => void) | undefined;
+	let unsubRealtime: (() => void) | undefined;
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
 
 	const stream = new ReadableStream({
@@ -54,6 +62,12 @@ export const GET: RequestHandler = async () => {
 						progress: j.progress
 					});
 				});
+
+				if (wantRealtime) {
+					unsubRealtime = client.subscribe('reporting.realtime', (u: CollectionUpdate) => {
+						send('realtime', u.fields ?? {});
+					});
+				}
 			}
 
 			// Comment heartbeat keeps intermediaries from closing an idle stream.
@@ -72,6 +86,7 @@ export const GET: RequestHandler = async () => {
 				closed = true;
 				unsubApp?.();
 				unsubJob?.();
+				unsubRealtime?.();
 				if (heartbeat) clearInterval(heartbeat);
 				try {
 					controller.close();
@@ -84,6 +99,7 @@ export const GET: RequestHandler = async () => {
 			closed = true;
 			unsubApp?.();
 			unsubJob?.();
+			unsubRealtime?.();
 			if (heartbeat) clearInterval(heartbeat);
 		}
 	});

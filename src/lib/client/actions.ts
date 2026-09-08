@@ -147,3 +147,24 @@ export function formatAgo(iso: string, now: Date = new Date()): string {
 	}
 	return rtf.format(Math.round(seconds / divisor), unit);
 }
+
+/** Throughput, for the dashboard's network and disk counters. */
+export function formatRate(bytesPerSecond: number | undefined): string {
+	if (typeof bytesPerSecond !== 'number' || !Number.isFinite(bytesPerSecond)) return '—';
+	return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+/**
+ * Uptime as something a person reads at a glance: the two largest units, so
+ * "3d 4h" rather than "3 days, 4 hours, 12 minutes and 6 seconds".
+ */
+export function formatUptime(seconds: number | undefined): string {
+	if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '—';
+	const d = Math.floor(seconds / 86400);
+	const h = Math.floor((seconds % 86400) / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	if (d > 0) return h > 0 ? `${d}d ${h}h` : `${d}d`;
+	if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+	if (m > 0) return `${m}m`;
+	return `${Math.floor(seconds)}s`;
+}
