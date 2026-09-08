@@ -90,6 +90,17 @@ function deferred<T>(): Deferred<T> {
 	return { promise, resolve, reject };
 }
 
+/**
+ * Some events are "dynamic sources" that take subscription params, supplied by
+ * subscribing to `name:{"json":"args"}` (e.g. app.stats:{"interval":5} or
+ * app.container_log_follow:{"app_name":…}). The allowlist and event dispatch
+ * both key off the bare name before the colon.
+ */
+export function baseEventName(event: string): string {
+	const i = event.indexOf(':');
+	return i === -1 ? event : event.slice(0, i);
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
@@ -217,7 +228,8 @@ export class TrueNasClient {
 	 * restored automatically across reconnects.
 	 */
 	subscribe(event: string, handler: SubscriptionHandler): () => void {
-		assertAllowed(event);
+		// Gate the bare name so a parameterized event still passes the allowlist.
+		assertAllowed(baseEventName(event));
 		let set = this.subs.get(event);
 		const firstForEvent = !set || set.size === 0;
 		if (!set) {
@@ -402,14 +414,31 @@ export class TrueNasClient {
 	}
 
 	private dispatch(update: CollectionUpdate): void {
-		const handlers = this.subs.get(update.collection);
-		this.log.debug(`← event ${update.collection} (${update.msg})${handlers ? '' : ' [no handler registered]'}`);
-		if (!handlers) return;
-		for (const handler of handlers) {
-			try {
-				handler(update);
-			} catch (e) {
-				this.log.warn(`subscription handler for ${update.collection} threw: ${String(e)}`);
+		// A parameterized subscription may be reported back under either the full
+		// `name:{json}` string or the bare name, so fall back to base-name
+		// matching and deliver to every subscription sharing that base.
+		const targets: Set<SubscriptionHandler>[] = [];
+		const exact = this.subs.get(update.collection);
+		if (exact) {
+			targets.push(exact);
+		} else {
+			const base = baseEventName(update.collection);
+			for (const [event, set] of this.subs) {
+				if (baseEventName(event) === base) targets.push(set);
+			}
+		}
+
+		this.log.debug(
+			`← event ${update.collection} (${update.msg})${targets.length ? '' : ' [no handler registered]'}`
+		);
+
+		for (const set of targets) {
+			for (const handler of set) {
+				try {
+					handler(update);
+				} catch (e) {
+					this.log.warn(`subscription handler for ${update.collection} threw: ${String(e)}`);
+				}
 			}
 		}
 	}

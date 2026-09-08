@@ -7,12 +7,12 @@
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import { postAction, VERB, GERUND, NEEDS_CONFIRM, type Action } from '$lib/client/actions';
 
 	let { data }: { data: PageData } = $props();
 
 	type Filter = 'all' | 'running' | 'stopped' | 'updates';
 	type Sort = 'state' | 'name' | 'recent';
-	type Action = 'start' | 'stop' | 'restart' | 'upgrade';
 
 	// Live list: the SSR snapshot (data.apps) with SSE deltas layered on top —
 	// `overrides` patches known apps, `extras` holds ones that appeared live,
@@ -23,7 +23,9 @@
 	let extras = $state<AppRecord[]>([]);
 	let removed = $state<string[]>([]);
 	let filter = $state<Filter>('all');
-	let sort = $state<Sort>('state');
+	// Name is the default: a stable alphabetical list means a row doesn't jump
+	// when its state changes under you (§5.1 offers state/name/recent).
+	let sort = $state<Sort>('name');
 	let sortOpen = $state(false);
 	let toastMsg = $state('');
 
@@ -44,19 +46,6 @@
 	const hasUpdate = (a: AppRecord) => Boolean(a.upgrade_available || a.image_updates_available);
 	const isRunning = (s: string) => s === 'RUNNING';
 	const isTransitional = (s: string) => s === 'DEPLOYING' || s === 'STOPPING';
-
-	const VERB: Record<Action, string> = {
-		start: 'Start',
-		stop: 'Stop',
-		restart: 'Restart',
-		upgrade: 'Update'
-	};
-	const GERUND: Record<Action, string> = {
-		start: 'Starting',
-		stop: 'Stopping',
-		restart: 'Restarting',
-		upgrade: 'Updating'
-	};
 
 	const STATE_ORDER: Record<string, number> = {
 		CRASHED: 0,
@@ -109,7 +98,7 @@
 		{ key: 'name', label: 'Name', hint: 'A–Z' },
 		{ key: 'recent', label: 'Recently changed', hint: 'Most recent first' }
 	];
-	const sortLabel = $derived(SORT_OPTS.find((o) => o.key === sort)?.label ?? 'State');
+	const sortLabel = $derived(SORT_OPTS.find((o) => o.key === sort)?.label ?? 'Name');
 
 	const dockerHealthy = $derived(data.docker?.status === 'RUNNING');
 
@@ -201,19 +190,22 @@
 	// ── actions ────────────────────────────────────────────────────────────
 
 	function requestAction(app: AppRecord, action: Action) {
-		if (action === 'stop') {
-			askConfirm(
-				{ title: `Stop ${app.name}?`, message: 'The app’s containers will be stopped.', confirmLabel: 'Stop', danger: true },
-				() => runAction(app, action)
-			);
-		} else if (action === 'upgrade') {
-			askConfirm(
-				{ title: `Update ${app.name}?`, message: 'Upgrade to the latest version and redeploy.', confirmLabel: 'Update' },
-				() => runAction(app, action)
-			);
-		} else {
-			runAction(app, action); // start / restart are tier 1 — no confirmation
+		if (!NEEDS_CONFIRM[action]) {
+			runAction(app, action); // start / restart are tier 1 — one tap
+			return;
 		}
+		askConfirm(
+			{
+				title: `${VERB[action]} ${app.name}?`,
+				message:
+					action === 'stop'
+						? 'The app’s containers will be stopped.'
+						: 'Upgrade to the latest version and redeploy.',
+				confirmLabel: VERB[action],
+				danger: action === 'stop'
+			},
+			() => runAction(app, action)
+		);
 	}
 
 	async function runAction(app: AppRecord, action: Action) {
@@ -225,12 +217,7 @@
 		);
 
 		try {
-			const res = await fetch(`/api/apps/${encodeURIComponent(app.name)}/${action}`, { method: 'POST' });
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
-				throw new Error(body.message ?? `HTTP ${res.status}`);
-			}
-			const { jobId } = await res.json();
+			const jobId = await postAction(app.name, action);
 			if (typeof jobId === 'number') jobToApp.set(jobId, app.id);
 		} catch (err) {
 			toastMsg = `${VERB[action]} failed for ${app.name}: ${(err as Error).message}`;
@@ -302,15 +289,17 @@
 				{@const busy = Boolean(p) || isTransitional(app.state)}
 				<li class="row">
 					<div class="top">
-						<div class="avatar" aria-hidden="true">{app.name.charAt(0).toUpperCase()}</div>
-						<div class="meta">
-							<div class="name">
-								{app.name}
-								{#if hasUpdate(app)}<span class="pill" title="Update available">⬆ update</span>{/if}
-								{#if app.custom_app}<span class="pill ghost" title="Custom (compose) app">custom</span>{/if}
+						<a class="peek" href={`/apps/${encodeURIComponent(app.name)}`}>
+							<div class="avatar" aria-hidden="true">{app.name.charAt(0).toUpperCase()}</div>
+							<div class="meta">
+								<div class="name">
+									{app.name}
+									{#if hasUpdate(app)}<span class="pill" title="Update available">⬆ update</span>{/if}
+									{#if app.custom_app}<span class="pill ghost" title="Custom (compose) app">custom</span>{/if}
+								</div>
+								{#if app.human_version}<div class="ver">{app.human_version}</div>{/if}
 							</div>
-							{#if app.human_version}<div class="ver">{app.human_version}</div>{/if}
-						</div>
+						</a>
 						{#if p}
 							<span class="pending" role="status">
 								<span class="spin" aria-hidden="true"></span>
@@ -454,6 +443,17 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
+	}
+	/* Tapping the icon/name drills into the detail view; the badge and the
+	   action buttons stay outside the link so one-tap actions still work. */
+	.peek {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		color: inherit;
+		text-decoration: none;
 	}
 	.avatar {
 		width: 40px;

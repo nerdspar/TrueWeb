@@ -81,6 +81,87 @@ export function redeployApp(client: TrueNasClient, name: string, onProgress?: (j
 	return client.callJob('app.redeploy', [name], onProgress);
 }
 
+/* ── detail view (§5.1) ─────────────────────────────────────────────────── */
+
+/** A container of an app. Verified: api_methods_app.container_ids.html. */
+export interface ContainerInfo {
+	id: string;
+	service_name: string;
+	image: string;
+	state: 'running' | 'exited' | 'crashed' | 'created' | 'starting';
+}
+
+/** Per-app stats pushed by the app.stats event. Verified: api_events_app.stats.html. */
+export interface AppStats {
+	app_name: string;
+	cpu_usage: number;
+	memory: number;
+	networks: { interface_name: string; rx_bytes: number; tx_bytes: number }[];
+	blkio: { read: number; write: number };
+}
+
+/** One log line from app.container_log_follow. Verified: api_events_…html. */
+export interface LogLine {
+	data: string;
+	timestamp: string | null;
+}
+
+/** The full app entry. Only fields we actually render are typed; the rest of
+ *  the AppEntry is passed through untyped rather than guessed at. */
+export interface AppDetail extends AppRecord {
+	version?: string;
+	notes?: string | null;
+	metadata?: Record<string, unknown>;
+	active_workloads?: Record<string, unknown>;
+	portals?: Record<string, string>;
+	version_details?: Record<string, unknown> | null;
+}
+
+/**
+ * app.get_instance — verified params (id, options). For TrueNAS apps the id is
+ * the release name; if a deployment ever diverges, fall back to a name query so
+ * the detail page still resolves.
+ */
+export async function getApp(client: TrueNasClient, name: string): Promise<AppDetail | null> {
+	try {
+		return await client.call<AppDetail>('app.get_instance', [name]);
+	} catch {
+		const rows = await client.call<AppDetail[]>('app.query', [[['name', '=', name]]]);
+		return rows?.[0] ?? null;
+	}
+}
+
+/** app.container_ids — verified params (app_name, {alive_only}). */
+export function containerIds(
+	client: TrueNasClient,
+	name: string,
+	aliveOnly = true
+): Promise<Record<string, ContainerInfo>> {
+	return client.call<Record<string, ContainerInfo>>('app.container_ids', [
+		name,
+		{ alive_only: aliveOnly }
+	]);
+}
+
+/** app.used_host_ips — verified: no params, returns {app_name: [ip, …]}. */
+export function usedHostIps(client: TrueNasClient): Promise<Record<string, string[]>> {
+	return client.call<Record<string, string[]>>('app.used_host_ips', []);
+}
+
+/** The app.stats event name. `interval` must be >= 2 seconds (verified). */
+export function statsEvent(intervalSeconds?: number): string {
+	return intervalSeconds ? `app.stats:${JSON.stringify({ interval: intervalSeconds })}` : 'app.stats';
+}
+
+/** The parameterized app.container_log_follow event name (verified shape). */
+export function logFollowEvent(appName: string, containerId: string, tailLines = 500): string {
+	return `app.container_log_follow:${JSON.stringify({
+		app_name: appName,
+		container_id: containerId,
+		tail_lines: tailLines
+	})}`;
+}
+
 /** Subscribe to live app state changes (§3.4). */
 export function watchApps(client: TrueNasClient, handler: (u: CollectionUpdate) => void): () => void {
 	return client.subscribe('app.query', handler);

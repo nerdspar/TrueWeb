@@ -46,17 +46,18 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 
 	// ── apps: read (§5.1 / §5.2) ─────────────────────────────────────────────
 	'app.query': { tier: 'read', verified: true },
-	'app.get_instance': { tier: 'read' },
+	'app.get_instance': { tier: 'read', verified: true },
 	'app.config': { tier: 'read' },
-	'app.container_ids': { tier: 'read' },
-	'app.used_ports': { tier: 'read' },
-	'app.used_host_ips': { tier: 'read' },
+	'app.container_ids': { tier: 'read', verified: true },
+	'app.used_ports': { tier: 'read', verified: true },
+	'app.used_host_ips': { tier: 'read', verified: true },
 	'app.image.query': { tier: 'read' },
 	'app.outdated_docker_images': { tier: 'read', verified: true },
 	'app.upgrade_summary': { tier: 'read' },
 	'app.rollback_versions': { tier: 'read' },
-	'app.container_log_follow': { tier: 'read' },
-	'app.stats': { tier: 'read' },
+	// Events (dynamic sources): subscribed as `name:{json}` with params.
+	'app.container_log_follow': { tier: 'read', verified: true },
+	'app.stats': { tier: 'read', verified: true },
 	'app.available': { tier: 'read' },
 	'catalog.get_app_details': { tier: 'read' },
 
