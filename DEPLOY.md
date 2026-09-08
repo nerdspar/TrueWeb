@@ -92,8 +92,24 @@ phone: **Share → Add to Home Screen**.
 
 ## 4. Updating
 
+A new **image**:
+
 ```bash
 docker compose pull && docker compose up -d
+```
+
+A change to the **compose file itself** — a new volume, a port, `group_add` —
+is a different thing, and the distinction catches people out: pulling an image
+does not touch the deployed compose. If TrueWeb is installed as a TrueNAS
+custom app, the app holds its own copy of the YAML, so a compose change in this
+repo has no effect until that copy is updated — through TrueWeb's own
+**✎ Edit YAML**, or the TrueNAS UI, or `docker compose up -d` against the
+updated file if you run it outside Apps.
+
+You can check what's actually deployed rather than what you think is:
+
+```bash
+docker inspect trueweb --format '{{.HostConfig.GroupAdd}} {{.Config.User}} {{range .Mounts}}{{.Source}}:{{.Destination}} {{end}}'
 ```
 
 ---
