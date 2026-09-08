@@ -116,11 +116,17 @@ async function main(): Promise<number> {
 				);
 				return 0;
 			case 'watch-apps': {
+				// Print a baseline so it's clear the stream is live, not stuck.
+				const current = await api.listApps(client);
+				console.log(`current state of ${current.length} app(s):`);
+				for (const a of current) console.log(`  ${a.name}  ${a.state}`);
 				api.watchApps(client, (u: CollectionUpdate) => {
 					const rec = (u.fields ?? {}) as { name?: string; state?: string };
 					console.log(`app.query ${u.msg}  ${rec.name ?? u.id ?? ''}  ${rec.state ?? ''}`.trimEnd());
 				});
-				console.log('watching app.query — Ctrl-C to stop');
+				console.log(
+					'now streaming app.query changes — start/stop an app in another terminal to see events. Ctrl-C to stop.'
+				);
 				await waitForSigint();
 				return 0;
 			}

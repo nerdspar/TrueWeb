@@ -344,6 +344,7 @@ export class TrueNasClient {
 
 	private dispatch(update: CollectionUpdate): void {
 		const handlers = this.subs.get(update.collection);
+		this.log.debug(`← event ${update.collection} (${update.msg})${handlers ? '' : ' [no handler registered]'}`);
 		if (!handlers) return;
 		for (const handler of handlers) {
 			try {
