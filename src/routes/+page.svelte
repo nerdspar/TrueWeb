@@ -5,12 +5,13 @@
 	import StateBadge from '$lib/components/StateBadge.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
+	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 
 	let { data }: { data: PageData } = $props();
 
 	type Filter = 'all' | 'running' | 'stopped' | 'updates';
-	type Sort = 'state' | 'name';
+	type Sort = 'state' | 'name' | 'recent';
 	type Action = 'start' | 'stop' | 'restart' | 'upgrade';
 
 	// Live list: the SSR snapshot (data.apps) with SSE deltas layered on top —
@@ -23,7 +24,12 @@
 	let removed = $state<string[]>([]);
 	let filter = $state<Filter>('all');
 	let sort = $state<Sort>('state');
+	let sortOpen = $state(false);
 	let toastMsg = $state('');
+
+	// When we last saw each app change state (from the live stream), for the
+	// "recently changed" sort. Populated by SSE, so it reflects this session.
+	let changedAt = $state<Record<string, number>>({});
 
 	// Rows with an action in flight: appId → the action + its job.
 	let pending = $state<Record<string, { action: Action; pct?: number }>>({});
@@ -82,11 +88,12 @@
 			list = list.filter((a) => a.state === 'STOPPED' || a.state === 'CRASHED');
 		else if (filter === 'updates') list = list.filter(hasUpdate);
 
-		list.sort((a, b) =>
-			sort === 'name'
-				? a.name.localeCompare(b.name)
-				: (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || a.name.localeCompare(b.name)
-		);
+		list.sort((a, b) => {
+			if (sort === 'name') return a.name.localeCompare(b.name);
+			if (sort === 'recent')
+				return (changedAt[b.id] ?? 0) - (changedAt[a.id] ?? 0) || a.name.localeCompare(b.name);
+			return (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || a.name.localeCompare(b.name);
+		});
 		return list;
 	});
 
@@ -96,6 +103,13 @@
 		{ key: 'stopped', label: 'Stopped' },
 		{ key: 'updates', label: 'Updates' }
 	];
+
+	const SORT_OPTS = [
+		{ key: 'state', label: 'State', hint: 'Stopped & erroring first' },
+		{ key: 'name', label: 'Name', hint: 'A–Z' },
+		{ key: 'recent', label: 'Recently changed', hint: 'Most recent first' }
+	];
+	const sortLabel = $derived(SORT_OPTS.find((o) => o.key === sort)?.label ?? 'State');
 
 	const dockerHealthy = $derived(data.docker?.status === 'RUNNING');
 
@@ -124,6 +138,7 @@
 				}
 			];
 		}
+		changedAt = { ...changedAt, [id]: Date.now() };
 	}
 
 	function onJobEvent(job: { id?: number; state?: string; method?: string; progress?: { percent?: number } }) {
@@ -156,6 +171,14 @@
 	}
 
 	onMount(() => {
+		// Restore the saved sort (§8: sort order may live in localStorage).
+		try {
+			const saved = localStorage.getItem('trueweb.sort');
+			if (saved === 'state' || saved === 'name' || saved === 'recent') sort = saved;
+		} catch {
+			/* private mode / blocked storage — fall back to the default */
+		}
+
 		if (!data.configured) return;
 		const es = new EventSource('/api/stream');
 		es.addEventListener('app', (e) => {
@@ -164,6 +187,15 @@
 		});
 		es.addEventListener('job', (e) => onJobEvent(JSON.parse((e as MessageEvent).data)));
 		return () => es.close();
+	});
+
+	// Persist the sort choice whenever it changes.
+	$effect(() => {
+		try {
+			localStorage.setItem('trueweb.sort', sort);
+		} catch {
+			/* ignore */
+		}
 	});
 
 	// ── actions ────────────────────────────────────────────────────────────
@@ -253,12 +285,8 @@
 				{c.label}
 			</button>
 		{/each}
-		<button
-			class="chip sort"
-			onclick={() => (sort = sort === 'state' ? 'name' : 'state')}
-			title="Toggle sort"
-		>
-			Sort: {sort === 'state' ? 'State' : 'Name'}
+		<button class="chip sort" onclick={() => (sortOpen = true)} title="Change sort">
+			↕ {sortLabel}
 		</button>
 	</div>
 
@@ -322,6 +350,12 @@
 	{/if}
 {/if}
 
+<SortSheet
+	bind:open={sortOpen}
+	current={sort}
+	options={SORT_OPTS}
+	onselect={(k) => (sort = k as Sort)}
+/>
 <ConfirmSheet
 	bind:open={confirmOpen}
 	title={confirmProps.title}
