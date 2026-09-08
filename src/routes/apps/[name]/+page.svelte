@@ -8,6 +8,8 @@
 		postAction,
 		formatBytes,
 		formatPercent,
+		confirmMessage,
+		resolveUpdateAction,
 		VERB,
 		GERUND,
 		NEEDS_CONFIRM,
@@ -42,7 +44,8 @@
 	const isRunning = $derived(appState === 'RUNNING');
 	const transitional = $derived(appState === 'DEPLOYING' || appState === 'STOPPING');
 	const busy = $derived(Boolean(pendingAction) || transitional);
-	const hasUpdate = $derived(Boolean(app?.upgrade_available || app?.image_updates_available));
+	// Which update this app actually needs — catalog upgrade vs image pull (§3.5).
+	const updateAction = $derived(app ? resolveUpdateAction(app) : null);
 	const train = $derived(
 		typeof app?.metadata?.train === 'string' ? (app.metadata.train as string) : null
 	);
@@ -102,10 +105,7 @@
 		if (NEEDS_CONFIRM[action]) {
 			confirmProps = {
 				title: `${VERB[action]} ${app.name}?`,
-				message:
-					action === 'stop'
-						? 'The app’s containers will be stopped.'
-						: 'Upgrade to the latest version and redeploy.',
+				message: confirmMessage(action),
 				confirmLabel: VERB[action],
 				danger: action === 'stop'
 			};
@@ -167,8 +167,10 @@
 		{:else}
 			<button class="act go" disabled={busy} onclick={() => requestAction('start')}>▶ Start</button>
 		{/if}
-		{#if hasUpdate}
-			<button class="act update" disabled={busy} onclick={() => requestAction('upgrade')}>⬆ Update</button>
+		{#if updateAction}
+			<button class="act update" disabled={busy} onclick={() => requestAction(updateAction)}>
+				⬆ Update
+			</button>
 		{/if}
 	</div>
 

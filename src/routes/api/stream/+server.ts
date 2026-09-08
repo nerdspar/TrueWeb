@@ -43,12 +43,14 @@ export const GET: RequestHandler = async () => {
 						id?: number;
 						method?: string;
 						state?: string;
+						error?: string | null;
 						progress?: { percent?: number; description?: string | null };
 					};
 					send('job', {
 						id: j.id ?? u.id,
 						method: j.method,
 						state: j.state,
+						error: j.error ?? null,
 						progress: j.progress
 					});
 				});

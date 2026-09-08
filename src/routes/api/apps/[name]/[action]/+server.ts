@@ -15,7 +15,10 @@ const ACTIONS: Record<string, string> = {
 	start: 'app.start',
 	stop: 'app.stop',
 	restart: 'app.redeploy',
-	upgrade: 'app.upgrade'
+	// Catalog version upgrade vs. pulling newer image digests — two different
+	// operations (§3.5), so the caller picks explicitly.
+	upgrade: 'app.upgrade',
+	pull: 'app.pull_images'
 };
 
 export const POST: RequestHandler = async ({ params }) => {
@@ -28,8 +31,14 @@ export const POST: RequestHandler = async ({ params }) => {
 	if (!serviceStatus().ready) error(503, 'TrueNAS is not reachable.');
 
 	const client = getClient();
-	// app.upgrade takes (name, options); the rest take (name). Verified v25.10.
-	const args = method === 'app.upgrade' ? [name, { app_version: 'latest' }] : [name];
+	// Verified v25.10: app.upgrade takes (name, {app_version}); app.pull_images
+	// takes (name, {redeploy}); the rest take (name).
+	const args =
+		method === 'app.upgrade'
+			? [name, { app_version: 'latest' }]
+			: method === 'app.pull_images'
+				? [name, { redeploy: true }]
+				: [name];
 
 	try {
 		const { id, done } = await client.callJob(method, args);

@@ -7,7 +7,15 @@
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
 	import SortSheet from '$lib/components/SortSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
-	import { postAction, VERB, GERUND, NEEDS_CONFIRM, type Action } from '$lib/client/actions';
+	import {
+		postAction,
+		confirmMessage,
+		resolveUpdateAction,
+		VERB,
+		GERUND,
+		NEEDS_CONFIRM,
+		type Action
+	} from '$lib/client/actions';
 
 	let { data }: { data: PageData } = $props();
 
@@ -197,10 +205,7 @@
 		askConfirm(
 			{
 				title: `${VERB[action]} ${app.name}?`,
-				message:
-					action === 'stop'
-						? 'The app’s containers will be stopped.'
-						: 'Upgrade to the latest version and redeploy.',
+				message: confirmMessage(action),
 				confirmLabel: VERB[action],
 				danger: action === 'stop'
 			},
@@ -236,9 +241,9 @@
 	<div class="titlerow">
 		<h1>Apps</h1>
 		{#if data.reachable && pendingUpdates > 0}
-			<span class="updates" title="Apps with an update available">
+			<a class="updates" href="/updates" title="Review and update these apps">
 				{pendingUpdates} update{pendingUpdates === 1 ? '' : 's'}
-			</span>
+			</a>
 		{/if}
 	</div>
 
@@ -328,9 +333,12 @@
 							</button>
 						{/if}
 						{#if hasUpdate(app)}
-							<button class="act update" disabled={busy} onclick={() => requestAction(app, 'upgrade')}>
-								⬆ Update
-							</button>
+							{@const upd = resolveUpdateAction(app)}
+							{#if upd}
+								<button class="act update" disabled={busy} onclick={() => requestAction(app, upd)}>
+									⬆ Update
+								</button>
+							{/if}
 						{/if}
 					</div>
 				</li>
@@ -378,12 +386,16 @@
 		letter-spacing: -0.02em;
 	}
 	.updates {
+		display: inline-flex;
+		align-items: center;
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		color: var(--on-accent);
 		background: var(--accent-grad);
-		padding: 4px 10px;
+		padding: 6px 12px;
 		border-radius: 999px;
+		text-decoration: none;
+		min-height: 32px;
 	}
 	.banner {
 		margin-top: 10px;

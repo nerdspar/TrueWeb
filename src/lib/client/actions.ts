@@ -1,19 +1,21 @@
 /** Shared client-side helpers for the app lifecycle actions (§5.1 / §6). */
 
-export type Action = 'start' | 'stop' | 'restart' | 'upgrade';
+export type Action = 'start' | 'stop' | 'restart' | 'upgrade' | 'pull';
 
 export const VERB: Record<Action, string> = {
 	start: 'Start',
 	stop: 'Stop',
 	restart: 'Restart',
-	upgrade: 'Update'
+	upgrade: 'Update',
+	pull: 'Update'
 };
 
 export const GERUND: Record<Action, string> = {
 	start: 'Starting',
 	stop: 'Stopping',
 	restart: 'Restarting',
-	upgrade: 'Updating'
+	upgrade: 'Updating',
+	pull: 'Updating'
 };
 
 /** Tier 1 actions go through on one tap; tier 2 needs a confirmation (§6). */
@@ -21,8 +23,46 @@ export const NEEDS_CONFIRM: Record<Action, boolean> = {
 	start: false,
 	restart: false,
 	stop: true,
-	upgrade: true
+	upgrade: true,
+	pull: true
 };
+
+/** What a tier-2 confirmation should say it's about to do. */
+export function confirmMessage(action: Action): string {
+	switch (action) {
+		case 'stop':
+			return 'The app’s containers will be stopped.';
+		case 'upgrade':
+			return 'Upgrade to the latest catalog version and redeploy.';
+		case 'pull':
+			return 'Pull the latest images and redeploy.';
+		default:
+			return '';
+	}
+}
+
+export interface UpdatableApp {
+	custom_app?: boolean;
+	upgrade_available?: boolean;
+	image_updates_available?: boolean;
+}
+
+/**
+ * Which update a given app actually needs (§3.5). `app.upgrade` is a catalog
+ * concept — it must never be offered on a custom app as though it were the
+ * same operation. Custom apps (and catalog apps with only newer image digests)
+ * update via app.pull_images, which redeploys.
+ */
+export function resolveUpdateAction(app: UpdatableApp): Action | null {
+	if (!app.custom_app && app.upgrade_available) return 'upgrade';
+	if (app.image_updates_available || app.upgrade_available) return 'pull';
+	return null;
+}
+
+/** Short label for the kind of update available, for the bulk list. */
+export function updateKind(app: UpdatableApp): string {
+	return resolveUpdateAction(app) === 'upgrade' ? 'new version' : 'new image';
+}
 
 /**
  * Kick off a lifecycle action. Resolves with the job id so the caller can
