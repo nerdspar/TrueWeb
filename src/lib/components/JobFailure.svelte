@@ -10,7 +10,7 @@
 	 * error names it, say so plainly and give the usual causes instead of
 	 * pretending to have detail we can't get.
 	 */
-	import { extractBoundPort } from '$lib/compose/edit';
+	import { extractBoundPort, nextFreePort } from '$lib/compose/edit';
 
 	let {
 		error = '',
@@ -66,19 +66,33 @@
 	 * beside the sentence explaining the problem. Rendering it further down the
 	 * page meant tapping the button appeared to do nothing, because the panel
 	 * (with a log tail in it) is taller than the screen.
+	 *
+	 * Seed once per clash, tracked by a plain variable so it isn't reactive.
+	 * Keying the seed off an empty field instead ("fill it if blank") re-fills
+	 * it the instant you backspace the last digit, which makes the suggestion
+	 * impossible to delete and forces you to select-all to type over it.
 	 */
 	let newPort = $state('');
+	let seededFor: number | null = null;
 	$effect(() => {
-		if (clashPort && !newPort) {
-			newPort = String(suggestPort?.(clashPort) ?? Math.max(clashPort + 1, 8000));
-		}
+		if (clashPort === null || seededFor === clashPort) return;
+		seededFor = clashPort;
+		newPort = String(suggestPort?.(clashPort) ?? nextFreePort(clashPort));
 	});
 
+	/**
+	 * A port that can't be applied disables the button, rather than leaving it
+	 * live and silently doing nothing — the same failure mode as the fixer being
+	 * off-screen. An empty field is mid-edit, not an error, so it says nothing.
+	 */
+	const target = $derived(/^\d+$/.test(newPort.trim()) ? Number(newPort.trim()) : null);
+	const portOk = $derived(
+		target !== null && target >= 1 && target <= 65535 && target !== clashPort
+	);
+
 	function applyPort() {
-		if (!clashPort) return;
-		const to = Number(newPort);
-		if (!Number.isInteger(to) || to < 1 || to > 65535) return;
-		onchangeport?.(clashPort, to);
+		if (clashPort === null || !portOk || target === null) return;
+		onchangeport?.(clashPort, target);
 	}
 
 	// When the error points at the lifecycle log, go and get it.
@@ -123,7 +137,7 @@
 						inputmode="numeric"
 						aria-label={`New host port to replace ${clashPort}`}
 					/>
-					<button class="tiny go" onclick={applyPort}>Change</button>
+					<button class="tiny go" onclick={applyPort} disabled={!portOk}>Change</button>
 				</div>
 			{/if}
 		</div>
@@ -304,6 +318,11 @@
 		border-color: transparent;
 		color: var(--on-accent);
 		background: var(--accent-grad);
+	}
+	.tiny.go:disabled {
+		background: var(--surface-2);
+		border-color: var(--border);
+		color: var(--text-dim);
 	}
 	.snippet {
 		max-height: none;
