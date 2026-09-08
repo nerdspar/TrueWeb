@@ -4,6 +4,7 @@
 	import StateBadge from '$lib/components/StateBadge.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
 	import OptionSheet from '$lib/components/OptionSheet.svelte';
+	import JobFailure from '$lib/components/JobFailure.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import {
 		postAction,
@@ -33,6 +34,8 @@
 	let toastMsg = $state('');
 	let logEl = $state<HTMLElement | null>(null);
 	let follow = $state(true);
+	/** Why the last action failed — kept on screen rather than toasted away. */
+	let failure = $state<{ error: string; exception: string } | null>(null);
 
 	let confirmOpen = $state(false);
 	let confirmProps = $state({ title: '', message: '', confirmLabel: 'Confirm', danger: false });
@@ -76,13 +79,34 @@
 			logs = [...logs, line].slice(-MAX_LOG_LINES);
 		});
 		es.addEventListener('job', (e) => {
-			const job = JSON.parse((e as MessageEvent).data);
+			const job = JSON.parse((e as MessageEvent).data) as {
+				id?: number;
+				state?: string;
+				error?: string | null;
+				progress?: { percent?: number };
+			};
 			if (pendingJob === null || job.id !== pendingJob) return;
 			if (typeof job.progress?.percent === 'number') pendingPct = job.progress.percent;
 			if (job.state === 'FAILED' || job.state === 'ABORTED') {
-				toastMsg = `${VERB[pendingAction ?? 'start']} failed.`;
+				const failedId = job.id;
+				failure = {
+					error: job.error ?? `${VERB[pendingAction ?? 'start']} failed.`,
+					exception: ''
+				};
 				clearPending();
+				void fetch(`/api/jobs/${failedId}`)
+					.then((r) => (r.ok ? r.json() : null))
+					.then((d: { error?: string | null; exception?: string | null } | null) => {
+						if (d && failure) {
+							failure = {
+								error: d.error ?? failure.error,
+								exception: d.exception ?? failure.exception
+							};
+						}
+					})
+					.catch(() => {});
 			} else if (job.state === 'SUCCESS') {
+				failure = null;
 				clearPending();
 			}
 		});
@@ -197,6 +221,7 @@
 	async function runAction(action: Action, payload?: Record<string, unknown>) {
 		if (!app) return;
 		pendingAction = action;
+		failure = null;
 		pendingPct = undefined;
 		try {
 			const jobId = await postAction(app.name, action, payload);
@@ -258,6 +283,16 @@
 			</button>
 		{/if}
 	</div>
+
+	{#if failure}
+		<JobFailure
+			title="Action failed"
+			error={failure.error}
+			exception={failure.exception}
+			app={data.name}
+			ondismiss={() => (failure = null)}
+		/>
+	{/if}
 
 	<section class="card">
 		<h2>Live</h2>

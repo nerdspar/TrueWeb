@@ -40,7 +40,9 @@ export const load: PageServerLoad = async ({ params }) => {
 
 		// Neither of these should sink the page if it fails.
 		const [containers, ips] = await Promise.all([
-			containerIds(client, name).catch(() => ({}) as Record<string, ContainerInfo>),
+			// alive_only false: a container that came up and died is exactly the
+			// one worth reading logs from.
+			containerIds(client, name, false).catch(() => ({}) as Record<string, ContainerInfo>),
 			usedHostIps(client).catch(() => ({}) as Record<string, string[]>)
 		]);
 

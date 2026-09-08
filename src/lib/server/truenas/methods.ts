@@ -131,16 +131,48 @@ export async function getApp(client: TrueNasClient, name: string): Promise<AppDe
 	}
 }
 
-/** app.container_ids — verified params (app_name, {alive_only}). */
+/**
+ * app.container_ids — verified params (app_name, {alive_only}).
+ *
+ * Defaults to including dead containers: when an app fails to come up, the
+ * container that exited is the one holding the reason, and asking only for live
+ * ones leaves nothing to look at.
+ */
 export function containerIds(
 	client: TrueNasClient,
 	name: string,
-	aliveOnly = true
+	aliveOnly = false
 ): Promise<Record<string, ContainerInfo>> {
 	return client.call<Record<string, ContainerInfo>>('app.container_ids', [
 		name,
 		{ alive_only: aliveOnly }
 	]);
+}
+
+/** A job's full detail, including whatever logs it managed to record. */
+export interface JobDetail {
+	id: number;
+	method: string;
+	state: string;
+	error: string | null;
+	exception: string | null;
+	logs_path: string | null;
+	logs_excerpt: string | null;
+}
+
+/**
+ * One job by id, with its error and log excerpt. Note that an app lifecycle
+ * failure records neither logs_path nor logs_excerpt — it points at
+ * /var/log/app_lifecycle.log on the box instead, and that file is only
+ * retrievable through the HTTP download endpoint, which this project doesn't
+ * use (§3.1). The error and exception are what we can show.
+ */
+export async function jobDetail(client: TrueNasClient, id: number): Promise<JobDetail | null> {
+	const rows = await client.call<JobDetail[]>('core.get_jobs', [
+		[['id', '=', id]],
+		{ select: ['id', 'method', 'state', 'error', 'exception', 'logs_path', 'logs_excerpt'] }
+	]);
+	return rows?.[0] ?? null;
 }
 
 /** app.upgrade_summary result. Verified: api_methods_app.upgrade_summary.html. */

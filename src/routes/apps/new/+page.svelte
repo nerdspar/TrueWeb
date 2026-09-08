@@ -14,6 +14,7 @@
 	import { repoNameFromUrl, suggestAppName } from '$lib/compose/github';
 	import { replaceVolumeSource, replaceHostPort } from '$lib/compose/edit';
 	import PathPicker from '$lib/components/PathPicker.svelte';
+	import JobFailure from '$lib/components/JobFailure.svelte';
 	import type { PathReport, PreflightResult } from '$lib/compose/types';
 
 	let { data }: { data: PageData } = $props();
@@ -53,6 +54,8 @@
 	let deployPct = $state<number | undefined>(undefined);
 	let deployNote = $state('');
 	let deployJob: number | null = null;
+	/** A failed deploy stays on screen until dismissed — see JobFailure. */
+	let failure = $state<{ error: string; exception: string } | null>(null);
 
 	/** Placeholders come from the raw text so the list doesn't shrink as you fill it. */
 	const placeholders = $derived(findPlaceholders(compose));
@@ -131,6 +134,7 @@
 				id?: number;
 				state?: string;
 				error?: string | null;
+				exception?: string | null;
 				progress?: { percent?: number; description?: string | null };
 			};
 			if (deployJob === null || job.id !== deployJob) return;
@@ -141,9 +145,27 @@
 				// Land on the app with its log tail already running (§5.2).
 				void goto(`/apps/${encodeURIComponent(name)}`);
 			} else if (job.state === 'FAILED' || job.state === 'ABORTED') {
+				const failedId = deployJob;
 				deploying = false;
 				deployJob = null;
-				toastMsg = `Deploy failed: ${job.error ?? job.state}`;
+				// The draft is deliberately kept: the compose is worth fixing and
+				// retrying, not retyping.
+				failure = {
+					error: job.error ?? job.state ?? 'The deploy failed.',
+					exception: job.exception ?? ''
+				};
+				// The event can lag the finished record, so fill in from the job.
+				void fetch(`/api/jobs/${failedId}`)
+					.then((r) => (r.ok ? r.json() : null))
+					.then((d: { error?: string | null; exception?: string | null } | null) => {
+						if (d && failure) {
+							failure = {
+								error: d.error ?? failure.error,
+								exception: d.exception ?? failure.exception
+							};
+						}
+					})
+					.catch(() => {});
 			}
 		});
 		return () => es.close();
@@ -308,6 +330,7 @@
 	async function deploy() {
 		if (!canDeploy) return;
 		deploying = true;
+		failure = null;
 		deployPct = undefined;
 		deployNote = 'Creating…';
 		try {
@@ -606,6 +629,17 @@
 				can't write.
 			</p>
 		</section>
+	{/if}
+
+	{#if failure}
+		<JobFailure
+			title="Deploy failed"
+			error={failure.error}
+			exception={failure.exception}
+			app={name}
+			onretry={deploy}
+			ondismiss={() => (failure = null)}
+		/>
 	{/if}
 
 	<div class="bar">
