@@ -35,6 +35,7 @@
 	// when its state changes under you (§5.1 offers state/name/recent).
 	let sort = $state<Sort>('name');
 	let sortOpen = $state(false);
+	let filterOpen = $state(false);
 	let toastMsg = $state('');
 
 	// When we last saw each app change state (from the live stream), for the
@@ -94,12 +95,32 @@
 		return list;
 	});
 
-	const chips: { key: Filter; label: string }[] = [
-		{ key: 'all', label: 'All' },
-		{ key: 'running', label: 'Running' },
-		{ key: 'stopped', label: 'Stopped' },
-		{ key: 'updates', label: 'Updates' }
-	];
+	/**
+	 * Two controls, not five. The filter chips and the sort button competed for
+	 * the same strip, so the row scrolled sideways on a phone and the sort
+	 * looked like a fifth filter. Each is now one button showing its current
+	 * value, opening the same bottom sheet the rest of the app uses.
+	 *
+	 * Counts live in the sheet: they're worth having, and worth nothing if they
+	 * cost you the ability to read the labels.
+	 */
+	const FILTER_OPTS = $derived([
+		{ key: 'all', label: 'All apps', hint: `${apps.length}` },
+		{
+			key: 'running',
+			label: 'Running',
+			hint: `${apps.filter((a) => a.state === 'RUNNING').length}`
+		},
+		{
+			key: 'stopped',
+			label: 'Stopped',
+			hint: `${apps.filter((a) => a.state === 'STOPPED' || a.state === 'CRASHED').length}`
+		},
+		{ key: 'updates', label: 'Updates available', hint: `${pendingUpdates}` }
+	]);
+	const filterLabel = $derived(
+		FILTER_OPTS.find((o) => o.key === filter)?.label ?? 'All apps'
+	);
 
 	const SORT_OPTS = [
 		{ key: 'state', label: 'State', hint: 'Stopped & erroring first' },
@@ -269,20 +290,14 @@
 		{/if}
 	</div>
 {:else}
-	<div class="chips" role="tablist" aria-label="Filter apps">
-		{#each chips as c (c.key)}
-			<button
-				class="chip"
-				class:on={filter === c.key}
-				role="tab"
-				aria-selected={filter === c.key}
-				onclick={() => (filter = c.key)}
-			>
-				{c.label}
-			</button>
-		{/each}
-		<button class="chip sort" onclick={() => (sortOpen = true)} title="Change sort">
-			↕ {sortLabel}
+	<div class="controls">
+		<button class="control" aria-haspopup="dialog" onclick={() => (filterOpen = true)}>
+			<span class="ck">Filter</span>
+			<span class="cv">{filterLabel}</span>
+		</button>
+		<button class="control" aria-haspopup="dialog" onclick={() => (sortOpen = true)}>
+			<span class="ck">Sort</span>
+			<span class="cv">{sortLabel}</span>
 		</button>
 	</div>
 
@@ -351,6 +366,13 @@
 	{/if}
 {/if}
 
+<OptionSheet
+	bind:open={filterOpen}
+	title="Show"
+	current={filter}
+	options={FILTER_OPTS}
+	onselect={(k) => (filter = k as Filter)}
+/>
 <OptionSheet
 	bind:open={sortOpen}
 	title="Sort by"
@@ -437,34 +459,39 @@
 		color: var(--text);
 	}
 
-	.chips {
-		display: flex;
+	.controls {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
 		gap: 8px;
-		padding: 12px 16px;
-		overflow-x: auto;
-		scrollbar-width: none;
+		padding: 10px 16px 2px;
 	}
-	.chips::-webkit-scrollbar {
-		display: none;
-	}
-	.chip {
-		flex: none;
-		padding: 8px 14px;
-		border-radius: 999px;
-		background: var(--surface-2);
+	.control {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 1px;
+		min-height: var(--tap);
+		padding: 6px 12px;
+		border-radius: var(--r-sm);
 		border: 1px solid var(--border);
-		color: var(--text-dim);
-		font-size: 13px;
+		background: var(--surface-2);
+		text-align: left;
+		min-width: 0;
+	}
+	.ck {
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-faint);
+	}
+	.cv {
+		font-size: 14px;
 		font-weight: 600;
-		min-height: 38px;
-	}
-	.chip.on {
 		color: var(--text);
-		border-color: transparent;
-		background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
-	}
-	.chip.sort {
-		margin-left: auto;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.list {
