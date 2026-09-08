@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { replaceVolumeSource, replaceHostPort, extractBoundPort } from '../src/lib/compose/edit.ts';
+import {
+	replaceVolumeSource,
+	replaceHostPort,
+	extractBoundPort,
+	nextFreePort
+} from '../src/lib/compose/edit.ts';
 import { inspectCompose } from '../src/lib/compose/inspect.ts';
 
 test('rewrites a relative short-syntax bind, keeping the container path', () => {
@@ -157,4 +162,31 @@ test('a detected clash feeds straight into the port rewriter', () => {
 	const { text, replaced } = replaceHostPort(yaml, port ?? 0, 3010);
 	assert.equal(replaced, 1);
 	assert.match(text, /- "3010:3001"/);
+});
+
+test('suggests a port well clear of the clash, not the one next door', () => {
+	// 3003 would be a bad guess: whatever holds 3002 usually holds its
+	// neighbours, and pre-flight can't see any of them.
+	assert.equal(nextFreePort(3002), 8000);
+	assert.equal(nextFreePort(3002, [8000, 8001]), 8002);
+	// Above the floor it just steps forward.
+	assert.equal(nextFreePort(8080), 8081);
+	// The clashing port is never suggested back.
+	assert.notEqual(nextFreePort(8000), 8000);
+});
+
+test('the suggestion skips ports the compose already publishes', () => {
+	const yaml = 'services:\n  a:\n    image: x\n    ports:\n      - "8000:80"\n      - "8001:81"\n';
+	const { hostPorts } = inspectCompose(yaml);
+	assert.equal(nextFreePort(3002, hostPorts), 8002);
+});
+
+test('the whole clash-to-fix path holds together', () => {
+	const yaml = 'services:\n  a:\n    image: x\n    ports:\n      - "3002:3001"\n';
+	const from = extractBoundPort('Error: failed to bind host port for 0.0.0.0:3002: address already in use');
+	assert.equal(from, 3002);
+	const to = nextFreePort(from ?? 0, inspectCompose(yaml).hostPorts);
+	const { text, replaced } = replaceHostPort(yaml, from ?? 0, to);
+	assert.equal(replaced, 1);
+	assert.match(text, /- "8000:3001"/);
 });

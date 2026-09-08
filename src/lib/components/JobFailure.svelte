@@ -20,7 +20,8 @@
 		title = 'It failed',
 		onretry,
 		ondismiss,
-		onfixport
+		suggestPort,
+		onchangeport
 	}: {
 		error?: string | null;
 		exception?: string | null;
@@ -30,8 +31,10 @@
 		title?: string;
 		onretry?: () => void;
 		ondismiss?: () => void;
-		/** Offered when the failure names a clashing host port. */
-		onfixport?: (port: number) => void;
+		/** A free port to offer, when the failure names a clashing one. */
+		suggestPort?: (from: number) => number;
+		/** Apply a new host port. Offered only when a clash was detected. */
+		onchangeport?: (from: number, to: number) => void;
 	} = $props();
 
 	/** The middleware prefixes its errors, e.g. "[EFAULT] …". */
@@ -57,6 +60,26 @@
 	const clashPort = $derived(
 		extractBoundPort([clean, exception ?? '', ...(lifecycle?.lines ?? [])].join('\n'))
 	);
+
+	/**
+	 * The replacement port lives here rather than in the parent: the fix belongs
+	 * beside the sentence explaining the problem. Rendering it further down the
+	 * page meant tapping the button appeared to do nothing, because the panel
+	 * (with a log tail in it) is taller than the screen.
+	 */
+	let newPort = $state('');
+	$effect(() => {
+		if (clashPort && !newPort) {
+			newPort = String(suggestPort?.(clashPort) ?? Math.max(clashPort + 1, 8000));
+		}
+	});
+
+	function applyPort() {
+		if (!clashPort) return;
+		const to = Number(newPort);
+		if (!Number.isInteger(to) || to < 1 || to > 65535) return;
+		onchangeport?.(clashPort, to);
+	}
 
 	// When the error points at the lifecycle log, go and get it.
 	$effect(() => {
@@ -90,10 +113,18 @@
 				Pre-flight only sees ports used by other apps — TrueNAS has no way to report a port held by
 				anything else, so this one only shows up here.
 			</p>
-			{#if onfixport}
-				<button class="tiny go" onclick={() => onfixport?.(clashPort)}>
-					Change port {clashPort}
-				</button>
+			{#if onchangeport}
+				<div class="fix">
+					<code>{clashPort}</code>
+					<span aria-hidden="true">→</span>
+					<input
+						class="port"
+						bind:value={newPort}
+						inputmode="numeric"
+						aria-label={`New host port to replace ${clashPort}`}
+					/>
+					<button class="tiny go" onclick={applyPort}>Change</button>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -232,6 +263,31 @@
 	}
 	.clash p {
 		margin: 0;
+	}
+	.fix {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+	}
+	.fix code {
+		flex: none;
+		color: var(--danger);
+	}
+	.fix .port {
+		width: 96px;
+		min-height: 40px;
+		text-align: center;
+		background: var(--surface-3);
+		border: 1px solid var(--border);
+		border-radius: var(--r-sm);
+		color: var(--text);
+		font-family: var(--mono);
+		font-size: 15px;
+		padding: 6px 8px;
+	}
+	.fix .tiny {
+		margin-top: 0;
 	}
 	.tiny {
 		margin-top: 10px;

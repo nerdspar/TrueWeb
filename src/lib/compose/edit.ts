@@ -116,3 +116,20 @@ export function replaceHostPort(
 
 	return { text: out, replaced };
 }
+
+/**
+ * The next host port worth offering after a clash.
+ *
+ * It starts at 8000 rather than `from + 1` for the same reason the clash
+ * happened at all: the thing holding the port is invisible to pre-flight, and
+ * whatever it is tends to hold neighbouring ports too — a service on 3001 is
+ * usually why 3002 is gone. 8000 up is comparatively empty on an appliance,
+ * and 444 (the TrueNAS UI when a proxy owns 443) is safely above it.
+ */
+export function nextFreePort(from: number, taken: Iterable<number> = []): number {
+	const used = new Set<number>(taken);
+	used.add(from);
+	let port = Math.max(from + 1, 8000);
+	while (port < 65535 && used.has(port)) port++;
+	return port;
+}

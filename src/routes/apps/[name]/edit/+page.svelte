@@ -8,6 +8,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { sanitizeCompose } from '$lib/compose/sanitize';
 	import { inspectCompose } from '$lib/compose/inspect';
+	import { replaceHostPort, nextFreePort } from '$lib/compose/edit';
 	import { diffLines, summarise, countChanges } from '$lib/compose/diff';
 
 	let { data }: { data: PageData } = $props();
@@ -52,6 +53,25 @@
 			}
 		}, 400);
 	});
+
+	/**
+	 * A redeploy hits host port clashes exactly like a first deploy does, so the
+	 * same in-place fix is offered here.
+	 */
+	function suggestFreePort(from: number): number {
+		return nextFreePort(from, inspection.hostPorts);
+	}
+
+	function changeClashingPort(from: number, to: number) {
+		const { text, replaced } = replaceHostPort(yaml, from, to);
+		if (replaced === 0) {
+			toastMsg = `Couldn't rewrite port ${from} automatically — change it below.`;
+			return;
+		}
+		edited = text;
+		failure = null;
+		toastMsg = `Port ${from} → ${to}. Save to redeploy.`;
+	}
 
 	onMount(() => {
 		try {
@@ -225,6 +245,8 @@
 			exception={failure.exception}
 			app={data.name}
 			ondismiss={() => (failure = null)}
+			suggestPort={suggestFreePort}
+			onchangeport={changeClashingPort}
 		/>
 	{/if}
 

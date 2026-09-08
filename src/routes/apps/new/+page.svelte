@@ -12,7 +12,7 @@
 		validateAppName
 	} from '$lib/compose/inspect';
 	import { repoNameFromUrl, suggestAppName } from '$lib/compose/github';
-	import { replaceVolumeSource, replaceHostPort } from '$lib/compose/edit';
+	import { replaceVolumeSource, replaceHostPort, nextFreePort } from '$lib/compose/edit';
 	import PathPicker from '$lib/components/PathPicker.svelte';
 	import JobFailure from '$lib/components/JobFailure.svelte';
 	import type { PathReport, PreflightResult } from '$lib/compose/types';
@@ -56,8 +56,6 @@
 	let deployJob: number | null = null;
 	/** A failed deploy stays on screen until dismissed — see JobFailure. */
 	let failure = $state<{ error: string; exception: string } | null>(null);
-	/** A host port the failure named as already taken, offered for fixing. */
-	let clashFix = $state<number | null>(null);
 
 	/** Placeholders come from the raw text so the list doesn't shrink as you fill it. */
 	const placeholders = $derived(findPlaceholders(compose));
@@ -336,6 +334,24 @@
 		compose = text;
 		pre = null;
 		toastMsg = `Port ${oldPort} → ${next}. Check again.`;
+	}
+
+	/** Skip anything this compose already publishes, and any known conflict. */
+	function suggestFreePort(from: number): number {
+		return nextFreePort(from, [...inspection.hostPorts, ...(pre?.portConflicts ?? [])]);
+	}
+
+	/** Rewrite a clashing host port straight from the failure panel. */
+	function changeClashingPort(from: number, to: number) {
+		const { text, replaced } = replaceHostPort(compose, from, to);
+		if (replaced === 0) {
+			toastMsg = `Couldn't rewrite port ${from} automatically — change it in the YAML.`;
+			return;
+		}
+		compose = text;
+		pre = null;
+		failure = null;
+		toastMsg = `Port ${from} → ${to}. Check again, then deploy.`;
 	}
 
 	async function deploy() {
@@ -669,39 +685,9 @@
 			app={name}
 			onretry={deploy}
 			ondismiss={() => (failure = null)}
-			onfixport={(port) => {
-				// Seed the inline fixer with the clashing port so it can be changed
-				// here rather than by hand in the YAML.
-				clashFix = port;
-				portEdits = { ...portEdits, [port]: String(port + 1) };
-			}}
+			suggestPort={suggestFreePort}
+			onchangeport={changeClashingPort}
 		/>
-		{#if clashFix !== null}
-			<section class="card">
-				<h2>Change the clashing port</h2>
-				<div class="fixrow">
-					<code>{clashFix}</code>
-					<span class="arrow" aria-hidden="true">→</span>
-					<input
-						class="text port"
-						value={portEdits[clashFix] ?? ''}
-						oninput={(e) => (portEdits = { ...portEdits, [clashFix!]: e.currentTarget.value })}
-						inputmode="numeric"
-						aria-label="New host port"
-					/>
-					<button
-						class="tiny go"
-						onclick={() => {
-							applyPortChange(clashFix!);
-							clashFix = null;
-							failure = null;
-						}}
-					>
-						Change
-					</button>
-				</div>
-			</section>
-		{/if}
 	{/if}
 
 	<div class="bar">

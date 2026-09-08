@@ -150,7 +150,9 @@ against the `trueweb` user (step 1).
 **A deploy fails with "address already in use"** — TrueNAS can only report
 ports held by *apps* (`app.used_ports`); v25.10 has no system-wide port
 method, so a port held by anything else is invisible to pre-flight. TrueWeb
-reads the clashing port out of the failure and offers to change it.
+reads the clashing port out of the failure and offers a replacement inline, in
+the failure panel itself. The suggestion starts at 8000 rather than one above
+the clash, because whatever holds the port usually holds its neighbours too.
 
 **A dataset won't create** — TrueWeb passes `aclmode: DISCARD`, which the
 middleware requires when the parent's `acltype` is POSIX or OFF. Any other
