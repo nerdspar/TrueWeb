@@ -69,7 +69,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'app.stop': { tier: 2, job: true, verified: true },
 	'app.upgrade': { tier: 2, job: true, verified: true },
 	'app.rollback': { tier: 2, job: true, verified: true },
-	'app.create': { tier: 2, job: true },
+	'app.create': { tier: 2, job: true, verified: true },
 	'app.update': { tier: 2, job: true },
 	'app.pull_images': { tier: 2, job: true },
 
@@ -109,15 +109,18 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'pool.dataset.snapshot_count': { tier: 'read' },
 	'pool.dataset.get_quota': { tier: 'read' },
 	'pool.snapshot.query': { tier: 'read' },
-	'filesystem.stat': { tier: 'read' },
+	'filesystem.stat': { tier: 'read', verified: true },
 
 	// ── datasets / filesystem: tier 2 ────────────────────────────────────────
-	'pool.dataset.create': { tier: 2, job: true },
+	// Verified against v25.10: dataset creation and mkdir return synchronously —
+	// only chown is a job. Getting this wrong would send them down the wrong
+	// call path entirely.
+	'pool.dataset.create': { tier: 2, verified: true },
 	'pool.dataset.set_quota': { tier: 2 },
 	'pool.dataset.lock': { tier: 2, job: true },
 	'pool.dataset.unlock': { tier: 2, job: true },
-	'filesystem.mkdir': { tier: 2 },
-	'filesystem.chown': { tier: 2, job: true }
+	'filesystem.mkdir': { tier: 2, verified: true },
+	'filesystem.chown': { tier: 2, job: true, verified: true }
 };
 
 /**
