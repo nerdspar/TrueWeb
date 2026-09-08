@@ -66,16 +66,42 @@ export function missingSegments(path: string, ancestor: string): string[] {
 }
 
 /**
+ * The dataset parents recognised when none are configured: a parent dataset
+ * literally named `Data`, under any pool. This is the "known config parent" of
+ * §5.2 — new app datasets belong directly under it and nowhere else.
+ */
+const DEFAULT_PARENT_BASENAMES = ['Data'];
+
+const trimSlash = (p: string) => p.replace(/\/+$/, '');
+
+/**
+ * Whether a missing path's parent is somewhere a *dataset* may be created.
+ * `configured` (TRUEWEB_DATASET_PARENTS) takes precedence when set, so the
+ * layout of a given box is configuration rather than a code change.
+ */
+export function isDatasetParent(ancestor: string, configured: string[] = []): boolean {
+	if (configured.length > 0) {
+		return configured.map(trimSlash).includes(trimSlash(ancestor));
+	}
+	const base = trimSlash(ancestor).split('/').pop() ?? '';
+	return DEFAULT_PARENT_BASENAMES.includes(base);
+}
+
+/**
  * §5.2: "Default to dataset for a direct child of a known config parent,
- * directory otherwise." Read as: exactly one missing segment directly under an
- * existing *dataset* is the case where a dataset is the right thing to create.
- * Anything deeper, or under a plain directory, gets a directory — nesting a
- * dataset several levels down under a non-dataset parent is not what someone
- * pasting a compose file means.
+ * directory otherwise." Only a single missing segment directly under a
+ * recognised parent dataset becomes a dataset; anything deeper, anywhere else,
+ * or under a plain directory becomes a directory. Creating datasets several
+ * levels down is not what someone pasting a compose file means, and it makes a
+ * mess of the dataset tree.
  */
 export function recommendKind(opts: {
+	existingAncestor: string | null;
 	missingCount: number;
 	ancestorIsMountpoint: boolean;
+	datasetParents?: string[];
 }): ProvisionKind {
-	return opts.missingCount === 1 && opts.ancestorIsMountpoint ? 'dataset' : 'directory';
+	const { existingAncestor, missingCount, ancestorIsMountpoint, datasetParents = [] } = opts;
+	if (missingCount !== 1 || !ancestorIsMountpoint || !existingAncestor) return 'directory';
+	return isDatasetParent(existingAncestor, datasetParents) ? 'dataset' : 'directory';
 }
