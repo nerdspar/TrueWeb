@@ -35,11 +35,12 @@ export interface ClientConfig {
 	/** Optional PEM CA bundle to trust (alternative to disabling verification). */
 	ca?: string;
 	/**
-	 * TLS SNI server name. When unset, SNI is chosen automatically: none for an
-	 * IP host, none when not verifying TLS (a LAN self-signed box serves its
-	 * default vhost and nginx rejects an unrecognized SNI with alert 112), and
-	 * the hostname otherwise so cert verification can match it. Set explicitly
-	 * only when reaching the middleware through a proxy that needs a given name.
+	 * Explicit TLS SNI override. When unset, SNI is the hostname in `host`, or
+	 * none when `host` is a bare IP (an IP literal cannot be an SNI). Set this
+	 * only in the unusual case of reaching the middleware through a name-based
+	 * proxy, where the presented name must differ from the connect address —
+	 * §10 has the backend connect to the box directly by LAN IP, which needs no
+	 * SNI at all, so this should normally stay unset.
 	 */
 	tlsServername?: string;
 }
@@ -208,8 +209,10 @@ export class TrueNasClient {
 	private resolveServername(): string | undefined {
 		if (this.cfg.tlsServername !== undefined) return this.cfg.tlsServername;
 		const host = this.cfg.host.split(':')[0] ?? this.cfg.host;
+		// An IP literal cannot be an SNI (RFC 6066), so send none — the direct
+		// LAN path (§10). A hostname sends its own name (ws derives it), which a
+		// name-based proxy needs; TLS-verify does not affect this choice.
 		if (isIP(host)) return '';
-		if (!this.cfg.verifyTls) return '';
 		return undefined;
 	}
 
