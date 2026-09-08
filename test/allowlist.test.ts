@@ -45,6 +45,7 @@ test('every M1 method the client calls is on the allowlist and verified', () => 
 	const m1 = [
 		'auth.login_ex',
 		'auth.me',
+		'core.ping',
 		'core.subscribe',
 		'core.unsubscribe',
 		'core.get_jobs',

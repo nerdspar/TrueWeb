@@ -37,6 +37,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'auth.me': { tier: 'read', verified: true },
 
 	// ── subscription + job infrastructure ────────────────────────────────────
+	'core.ping': { tier: 'read', verified: true },
 	'core.subscribe': { tier: 'read', verified: true },
 	'core.unsubscribe': { tier: 'read', verified: true },
 	'core.get_jobs': { tier: 'read', verified: true },

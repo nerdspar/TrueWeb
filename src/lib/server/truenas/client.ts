@@ -59,6 +59,14 @@ export type SubscriptionHandler = (update: CollectionUpdate) => void;
 const JOBS_EVENT = 'core.get_jobs';
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_CAP_MS = 30_000;
+/**
+ * The middleware closes idle sockets (observed ~90–120s), and §4 depends on one
+ * long-lived connection. A periodic core.ping is unambiguous application-level
+ * activity that keeps the session warm, and its failure detects a dead socket
+ * so we recycle proactively rather than waiting for the next silent close.
+ */
+const HEARTBEAT_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
 
 interface Inflight {
 	resolve: (value: unknown) => void;
@@ -82,6 +90,23 @@ function deferred<T>(): Deferred<T> {
 	return { promise, resolve, reject };
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+		timer.unref?.();
+		p.then(
+			(v) => {
+				clearTimeout(timer);
+				resolve(v);
+			},
+			(e) => {
+				clearTimeout(timer);
+				reject(e);
+			}
+		);
+	});
+}
+
 export class TrueNasClient {
 	private readonly cfg: ClientConfig;
 	private readonly log: Logger;
@@ -100,6 +125,7 @@ export class TrueNasClient {
 	private ready = false;
 	private reconnectAttempts = 0;
 	private reconnectTimer?: ReturnType<typeof setTimeout>;
+	private heartbeatTimer?: ReturnType<typeof setInterval>;
 	private firstReady?: Deferred<AuthMe>;
 	private me?: AuthMe;
 	private sniHintShown = false;
@@ -132,6 +158,7 @@ export class TrueNasClient {
 	/** Shut down for good: no further reconnects; best-effort unsubscribe. */
 	async close(): Promise<void> {
 		this.shouldRun = false;
+		this.stopHeartbeat();
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		const ws = this.ws;
 		if (ws && ws.readyState === WebSocket.OPEN) {
@@ -251,6 +278,7 @@ export class TrueNasClient {
 		await this.resubscribe();
 		this.ready = true;
 		this.reconnectAttempts = 0;
+		this.startHeartbeat();
 		this.log.info(`ready — authenticated as ${this.me.pw_name} (uid ${this.me.pw_uid})`);
 		this.firstReady?.resolve(this.me);
 	}
@@ -276,6 +304,7 @@ export class TrueNasClient {
 
 	private onClose(code: number, reason: string): void {
 		this.ready = false;
+		this.stopHeartbeat();
 		this.subIds.clear();
 		const err = new NotConnectedError(`socket closed (${code}${reason ? ` ${reason}` : ''})`);
 		for (const pending of this.inflight.values()) pending.reject(err);
@@ -298,6 +327,31 @@ export class TrueNasClient {
 		}
 		this.log.warn(`connection setup failed: ${String((err as Error)?.message ?? err)}`);
 		this.ws?.terminate();
+	}
+
+	private startHeartbeat(): void {
+		this.stopHeartbeat();
+		const timer = setInterval(() => void this.heartbeat(), HEARTBEAT_MS);
+		// Don't let the heartbeat keep the process alive on its own.
+		timer.unref?.();
+		this.heartbeatTimer = timer;
+	}
+
+	private stopHeartbeat(): void {
+		if (this.heartbeatTimer) {
+			clearInterval(this.heartbeatTimer);
+			this.heartbeatTimer = undefined;
+		}
+	}
+
+	private async heartbeat(): Promise<void> {
+		if (!this.ready) return;
+		try {
+			await withTimeout(this.call('core.ping', []), HEARTBEAT_TIMEOUT_MS);
+		} catch (err) {
+			this.log.warn(`heartbeat failed (${String((err as Error)?.message ?? err)}); recycling socket`);
+			this.ws?.terminate();
+		}
 	}
 
 	private scheduleReconnect(): void {
