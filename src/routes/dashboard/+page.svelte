@@ -12,6 +12,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { formatAgo, formatBytes, formatPercent, formatRate, formatUptime } from '$lib/client/actions';
 	import { alertIso, alertMessage, alertTone, sortAlerts } from '$lib/dashboard/alerts';
+	import { anyErrors, diskCount, poolErrors, totalErrors } from '$lib/storage/topology';
 	import {
 		aggregateCpu,
 		memoryUsed,
@@ -89,6 +90,10 @@
 					// boot-pool shows up in the realtime feed but not in pool.query
 					// (§5.5 reads it via boot.get_state), so health can be absent.
 					status: entry?.status ?? null,
+					// Health has no realtime equivalent, so it comes from pool.query —
+					// and is shown always, not only once something is wrong.
+					errors: poolErrors(entry?.topology),
+					disks: diskCount(entry?.topology),
 					degraded: entry ? !entry.healthy : false,
 					warning: entry?.warning ?? false,
 					fragmentation: entry?.fragmentation ?? null,
@@ -182,10 +187,6 @@
 					? ` — this box runs ${data.system.version}`
 					: ''}.
 			</p>
-			<p class="dim small">
-				TrueWeb doesn't apply OS updates: <code>update.run</code> is deliberately not
-				reachable from here (§5.4). Install it from the TrueNAS UI, under System → Update.
-			</p>
 			{#if newVersion.release_notes_url}
 				<a class="notes" href={newVersion.release_notes_url} target="_blank" rel="noreferrer noopener">
 					Release notes ↗
@@ -194,19 +195,21 @@
 		</section>
 	{/if}
 
-	{#if jobs.length > 0}
-		<section class="card">
-			<h2>Running now</h2>
-			{#each jobs as j (j.id)}
-				<div class="job">
-					<span class="mono">{j.method}</span>
-					<span class="jstate">
-						{j.state === 'WAITING' ? 'queued' : `${Math.round(j.progress?.percent ?? 0)}%`}
-					</span>
-				</div>
-			{/each}
-		</section>
-	{/if}
+	<section class="card">
+		<h2>Running now</h2>
+		{#if jobs.length === 0}
+			<p class="dim small">Nothing running.</p>
+		{:else}
+		{#each jobs as j (j.id)}
+			<div class="job">
+				<span class="mono">{j.method}</span>
+				<span class="jstate">
+					{j.state === 'WAITING' ? 'queued' : `${Math.round(j.progress?.percent ?? 0)}%`}
+				</span>
+			</div>
+		{/each}
+		{/if}
+	</section>
 
 	{#if pools.length > 0}
 		<section class="card">
@@ -232,6 +235,18 @@
 								? `Over ${POOL_WARN_PERCENT}% full — write performance starts to suffer here.`
 								: ''}
 					/>
+					{#if p.status}
+						<p class="health" class:bad={p.degraded || anyErrors(p.errors)}>
+							<span class="hstat">{p.status}</span>
+							{#if p.disks}· {p.disks} disks{/if}
+							·
+							{#if anyErrors(p.errors)}
+								{totalErrors(p.errors)} errors ({p.errors.read}R / {p.errors.write}W / {p.errors.checksum}C)
+							{:else}
+								no errors
+							{/if}
+						</p>
+					{/if}
 				</div>
 			{/each}
 		</section>
@@ -453,6 +468,21 @@
 		color: var(--text-dim);
 		font-variant-numeric: tabular-nums;
 	}
+	.health {
+		margin: 6px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.health .hstat {
+		color: var(--ok);
+		font-weight: 700;
+	}
+	.health.bad,
+	.health.bad .hstat {
+		color: var(--danger);
+	}
 	.poolbad {
 		margin: 0 0 8px;
 		padding: 8px 10px;
@@ -494,11 +524,6 @@
 		font-weight: 500;
 		font-size: 13px;
 		overflow-wrap: anywhere;
-	}
-	code {
-		font-family: var(--mono);
-		font-size: 11px;
-		color: var(--text);
 	}
 
 	.nic {

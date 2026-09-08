@@ -112,7 +112,6 @@
 			{ label: 'Record size', value: propText(ds.recordsize) },
 			{ label: 'Quota', value: hasQuota(ds.quota) ? propText(ds.quota) : 'none' },
 			{ label: 'Ref quota', value: hasQuota(ds.refquota) ? propText(ds.refquota) : 'none' },
-			{ label: 'Referenced', value: propText(ds.referenced) },
 			{ label: 'Used by snapshots', value: propText(ds.usedbysnapshots) },
 			{ label: 'Used by children', value: propText(ds.usedbychildren) },
 			{ label: 'Used by this dataset', value: propText(ds.usedbydataset) },

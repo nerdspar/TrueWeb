@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TabIcon from '$lib/components/TabIcon.svelte';
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -28,14 +29,14 @@
 		};
 	});
 
-	// M2 ships the Apps tab only (§11). The other tabs are placeholders so the
-	// bottom-nav shape is real, but they are not linked until their milestone.
+	// All four tabs ship as of M5. Apps sits last despite being the app's reason
+	// for existing and still owning `/` — that's the requested order.
 	const tabs = [
-		{ href: '/', label: 'Apps', icon: 'apps', enabled: true },
-		{ href: '/dashboard', label: 'Dash', icon: 'dash', enabled: true },
-		{ href: '/storage', label: 'Storage', icon: 'storage', enabled: true },
-		{ href: '/datasets', label: 'Data', icon: 'data', enabled: true }
-	];
+		{ href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+		{ href: '/storage', label: 'Storage', icon: 'storage' },
+		{ href: '/datasets', label: 'Datasets', icon: 'datasets' },
+		{ href: '/', label: 'Apps', icon: 'apps' }
+	] as const;
 
 	const isActive = (href: string) =>
 		href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
@@ -54,17 +55,15 @@
 
 	<nav class="tabbar" aria-label="Sections">
 		{#each tabs as tab (tab.href)}
-			{#if tab.enabled}
-				<a class="tab" class:active={isActive(tab.href)} href={tab.href} aria-current={isActive(tab.href) ? 'page' : undefined}>
-					<span class="dot" data-icon={tab.icon}></span>
-					<span class="label">{tab.label}</span>
-				</a>
-			{:else}
-				<span class="tab disabled" aria-disabled="true" title="Coming later">
-					<span class="dot" data-icon={tab.icon}></span>
-					<span class="label">{tab.label}</span>
-				</span>
-			{/if}
+			<a
+				class="tab"
+				class:active={isActive(tab.href)}
+				href={tab.href}
+				aria-current={isActive(tab.href) ? 'page' : undefined}
+			>
+				<TabIcon name={tab.icon} />
+				<span class="label">{tab.label}</span>
+			</a>
 		{/each}
 	</nav>
 </div>
@@ -124,18 +123,17 @@
 		color: var(--text);
 	}
 
-	.tab.disabled {
-		opacity: 0.4;
+	.tab.active {
+		/* The icon inherits currentColor, so the accent needs no second asset. */
+		color: var(--accent);
 	}
 
-	.dot {
-		width: 22px;
-		height: 22px;
-		border-radius: 7px;
-		background: var(--surface-3);
-	}
-
-	.tab.active .dot {
-		background: var(--accent-grad);
+	.label {
+		/* Four full words on a 375px screen: let the longest one shrink rather
+		   than wrap or clip. */
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

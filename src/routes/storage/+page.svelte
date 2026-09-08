@@ -223,12 +223,6 @@
 				</div>
 				<div><dt>Free</dt><dd>{formatBytes(row.free)}</dd></div>
 			</div>
-			{#if !row.raw && row.pool.size}
-				<p class="rawnote">
-					{formatBytes(row.pool.size)} raw across {row.disks} disks — the difference is RAIDZ
-					parity, which you can't fill.
-				</p>
-			{/if}
 
 			{#if row.scan}
 				<div class="scan" class:running={scanning(row.scan)}>
@@ -289,9 +283,7 @@
 					</span>
 				</div>
 			</div>
-			<p class="dim small">
-				The boot pool. It holds the OS, not your data, and TrueWeb offers no actions on it.
-			</p>
+			<p class="dim small">The boot pool — it holds the OS, not your data.</p>
 			<Meter
 				label={bootRow.raw ? 'Capacity (raw)' : 'Capacity'}
 				detail={bootRow.total
@@ -453,11 +445,6 @@
 		font-size: 14px;
 		font-weight: 700;
 		font-variant-numeric: tabular-nums;
-	}
-	.rawnote {
-		margin: 8px 0 0;
-		font-size: 11px;
-		color: var(--text-faint);
 	}
 
 	.scan {

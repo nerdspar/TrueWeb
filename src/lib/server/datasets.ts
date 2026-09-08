@@ -36,7 +36,6 @@ export function listDatasets(client: TrueNasClient): Promise<DatasetRow[]> {
 /** The full property set for one dataset — only ever fetched one at a time. */
 export type DatasetDetail = DatasetRow & {
 	pool?: string;
-	referenced?: ZfsProp;
 	usedbysnapshots?: ZfsProp;
 	usedbychildren?: ZfsProp;
 	usedbydataset?: ZfsProp;
