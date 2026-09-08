@@ -8,6 +8,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
+	import Icon from '$lib/components/Icon.svelte';
 	import Meter from '$lib/components/Meter.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { formatAgo, formatBytes, formatPercent, formatRate, formatUptime } from '$lib/client/actions';
@@ -41,6 +42,25 @@
 	let toastMsg = $state('');
 
 	const newVersion = $derived(data.update?.status?.new_version ?? null);
+
+	/**
+	 * Alerts, the update notice and running jobs are header icons rather than
+	 * three stacked cards: they're usually empty or a single line, and as cards
+	 * they pushed the things you actually came to look at — pools and live load
+	 * — below the fold. The badge carries the state; the panel opens on demand,
+	 * one at a time.
+	 */
+	let panel = $state<'alerts' | 'update' | 'jobs' | null>(null);
+	const togglePanel = (which: 'alerts' | 'update' | 'jobs') =>
+		(panel = panel === which ? null : which);
+
+	/** The badge takes the worst severity present, so it can't under-report. */
+	const alertTone_ = $derived.by(() => {
+		const tones = alerts.map((a) => alertTone(a.level));
+		if (tones.includes('danger')) return 'danger';
+		if (tones.includes('warn')) return 'warn';
+		return 'info';
+	});
 	/** Pool health by name, to merge over the live capacity figures. */
 	const healthByName = $derived(new Map(data.pools.map((p) => [p.name, p])));
 
@@ -150,6 +170,40 @@
 
 <header class="head">
 	<h1>Dashboard</h1>
+	{#if data.reachable}
+		<div class="status">
+			<button
+				class="glyph"
+				class:on={panel === 'alerts'}
+				aria-expanded={panel === 'alerts'}
+				aria-label={`Alerts: ${alerts.length}`}
+				onclick={() => togglePanel('alerts')}
+			>
+				<Icon name="bell" size={20} />
+				{#if alerts.length > 0}<span class="badge {alertTone_}">{alerts.length}</span>{/if}
+			</button>
+			<button
+				class="glyph"
+				class:on={panel === 'update'}
+				aria-expanded={panel === 'update'}
+				aria-label={newVersion ? `Update available: ${newVersion.version}` : 'No update available'}
+				onclick={() => togglePanel('update')}
+			>
+				<Icon name="update" size={20} />
+				{#if newVersion}<span class="badge info">1</span>{/if}
+			</button>
+			<button
+				class="glyph"
+				class:on={panel === 'jobs'}
+				aria-expanded={panel === 'jobs'}
+				aria-label={`Running jobs: ${jobs.length}`}
+				onclick={() => togglePanel('jobs')}
+			>
+				<Icon name="activity" size={20} />
+				{#if jobs.length > 0}<span class="badge accent">{jobs.length}</span>{/if}
+			</button>
+		</div>
+	{/if}
 </header>
 
 {#if !data.reachable}
@@ -159,9 +213,12 @@
 		<p class="dim">{data.reason}</p>
 	</div>
 {:else}
-	{#if alerts.length > 0}
+	{#if panel === 'alerts'}
 		<section class="card">
 			<h2>Alerts</h2>
+			{#if alerts.length === 0}
+				<p class="dim small">No active alerts.</p>
+			{/if}
 			{#each alerts as a (a.uuid)}
 				<div class="alert {alertTone(a.level)}">
 					<div class="atext">
@@ -179,9 +236,14 @@
 		</section>
 	{/if}
 
-	{#if newVersion}
+	{#if panel === 'update'}
 		<section class="card">
 			<h2>System update</h2>
+			{#if !newVersion}
+				<p class="dim small">
+					Up to date{data.system?.version ? ` — running ${data.system.version}` : ''}.
+				</p>
+			{:else}
 			<p class="upd">
 				<strong>{newVersion.version}</strong> is available{data.system?.version
 					? ` — this box runs ${data.system.version}`
@@ -192,24 +254,27 @@
 					Release notes ↗
 				</a>
 			{/if}
+			{/if}
 		</section>
 	{/if}
 
-	<section class="card">
-		<h2>Running now</h2>
-		{#if jobs.length === 0}
-			<p class="dim small">Nothing running.</p>
-		{:else}
-		{#each jobs as j (j.id)}
-			<div class="job">
-				<span class="mono">{j.method}</span>
-				<span class="jstate">
-					{j.state === 'WAITING' ? 'queued' : `${Math.round(j.progress?.percent ?? 0)}%`}
-				</span>
-			</div>
-		{/each}
-		{/if}
-	</section>
+	{#if panel === 'jobs'}
+		<section class="card">
+			<h2>Running now</h2>
+			{#if jobs.length === 0}
+				<p class="dim small">Nothing running.</p>
+			{:else}
+			{#each jobs as j (j.id)}
+				<div class="job">
+					<span class="mono">{j.method}</span>
+					<span class="jstate">
+						{j.state === 'WAITING' ? 'queued' : `${Math.round(j.progress?.percent ?? 0)}%`}
+					</span>
+				</div>
+			{/each}
+			{/if}
+		</section>
+	{/if}
 
 	{#if pools.length > 0}
 		<section class="card">
@@ -342,6 +407,50 @@
 <Toast bind:message={toastMsg} />
 
 <style>
+	.status {
+		display: flex;
+		gap: 4px;
+	}
+	.glyph {
+		position: relative;
+		width: var(--tap);
+		min-height: var(--tap);
+		display: grid;
+		place-items: center;
+		border: 0;
+		border-radius: var(--r-sm);
+		background: transparent;
+		color: var(--text-dim);
+	}
+	.glyph.on {
+		background: var(--surface-2);
+		color: var(--text);
+	}
+	.badge {
+		position: absolute;
+		top: 4px;
+		right: 2px;
+		min-width: 16px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--info);
+		color: #04070f;
+		font-size: 10px;
+		font-weight: 800;
+		line-height: 16px;
+		text-align: center;
+	}
+	.badge.warn {
+		background: var(--warn);
+	}
+	.badge.danger {
+		background: var(--danger);
+		color: #fff;
+	}
+	.badge.accent {
+		background: var(--accent);
+		color: var(--on-accent);
+	}
 	.head {
 		display: flex;
 		align-items: center;

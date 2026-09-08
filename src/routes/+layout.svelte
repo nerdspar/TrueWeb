@@ -1,5 +1,5 @@
 <script lang="ts">
-	import TabIcon from '$lib/components/TabIcon.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -61,7 +61,7 @@
 				href={tab.href}
 				aria-current={isActive(tab.href) ? 'page' : undefined}
 			>
-				<TabIcon name={tab.icon} />
+				<Icon name={tab.icon} />
 				<span class="label">{tab.label}</span>
 			</a>
 		{/each}
