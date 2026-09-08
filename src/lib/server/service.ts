@@ -12,8 +12,9 @@
  * type-checked on its own.
  */
 import { building } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { TrueNasClient } from './truenas/client.ts';
-import { loadConfig } from './truenas/env.ts';
+import { configFrom } from './truenas/env.ts';
 import { makeLogger } from './truenas/log.ts';
 
 let client: TrueNasClient | null = null;
@@ -23,7 +24,7 @@ let started = false;
 function ensureClient(): TrueNasClient | null {
 	if (client || configError) return client;
 	try {
-		client = new TrueNasClient(loadConfig(), makeLogger('trueweb'));
+		client = new TrueNasClient(configFrom(env), makeLogger('trueweb'));
 	} catch (err) {
 		configError = (err as Error).message;
 		client = null;
