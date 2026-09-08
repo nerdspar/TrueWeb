@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getClient, serviceStatus } from '$lib/server/service';
 import { deleteApp } from '$lib/server/truenas/methods';
 import { middlewareFailed } from '$lib/server/mwerror';
+import { history } from '$lib/server/history';
 
 /**
  * Delete an app (tier 2.5 — the UI makes you type the name first).
@@ -40,6 +41,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			force: body.force === true
 		});
 		void done.catch(() => {});
+		// Nothing left to restore the history onto, and holding a deleted app's
+		// compose (secrets included) serves no one.
+		history.forget(name);
 		return json({ ok: true, jobId: id });
 	} catch (err) {
 		middlewareFailed(err, `Could not delete ${name}`);

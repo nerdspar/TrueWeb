@@ -10,6 +10,7 @@
 	import { inspectCompose } from '$lib/compose/inspect';
 	import { replaceHostPort, nextFreePort } from '$lib/compose/edit';
 	import { diffLines, summarise, countChanges } from '$lib/compose/diff';
+	import { formatAgo } from '$lib/client/actions';
 
 	let { data }: { data: PageData } = $props();
 
@@ -54,6 +55,52 @@
 		}, 400);
 	});
 
+	// ── saved versions (§5.3) ──────────────────────────────────────────────
+	type VersionMeta = { id: number; savedAt: string; bytes: number; lines: number };
+	let versions = $state<VersionMeta[]>([]);
+	let historyPersistent = $state(true);
+	let restoring = $state<number | null>(null);
+	let showHistory = $state(false);
+
+	async function loadHistory() {
+		try {
+			const res = await fetch(`/api/apps/${encodeURIComponent(data.name)}/config/history`);
+			if (!res.ok) return;
+			const d = (await res.json()) as { versions?: VersionMeta[]; persistent?: boolean };
+			versions = d.versions ?? [];
+			historyPersistent = d.persistent !== false;
+		} catch {
+			/* history is a convenience; its absence is not worth an error */
+		}
+	}
+
+	/**
+	 * Restore loads the old text into the editor rather than deploying it. The
+	 * diff and the confirm step are the whole point of this screen, and an undo
+	 * that redeploys on one tap would skip both.
+	 */
+	async function restore(id: number) {
+		restoring = id;
+		try {
+			const res = await fetch(
+				`/api/apps/${encodeURIComponent(data.name)}/config/history?id=${id}`
+			);
+			if (!res.ok) {
+				toastMsg = 'That version is no longer kept.';
+				await loadHistory();
+				return;
+			}
+			const v = (await res.json()) as { yaml: string; savedAt: string };
+			edited = v.yaml;
+			showHistory = false;
+			toastMsg = `Loaded the version from ${formatAgo(v.savedAt)}. Review, then save.`;
+		} catch (err) {
+			toastMsg = (err as Error).message ?? 'Could not load that version.';
+		} finally {
+			restoring = null;
+		}
+	}
+
 	/**
 	 * A redeploy hits host port clashes exactly like a first deploy does, so the
 	 * same in-place fix is offered here.
@@ -83,6 +130,8 @@
 		} catch {
 			/* ignore */
 		}
+
+		if (data.isCustom) void loadHistory();
 
 		if (!data.configured) return;
 		const es = new EventSource('/api/stream');
@@ -227,6 +276,38 @@
 			Environment values are shown as they are stored, secrets included.
 		</p>
 	</section>
+
+	{#if versions.length > 0}
+		<section class="card">
+			<button class="disclose" onclick={() => (showHistory = !showHistory)} aria-expanded={showHistory}>
+				<h2>Saved versions</h2>
+				<span class="count">{versions.length}</span>
+				<span class="chev" aria-hidden="true">{showHistory ? '\u2212' : '+'}</span>
+			</button>
+			{#if showHistory}
+				<p class="dim small">
+					What this app's compose was before each save. Restoring loads it into the editor above —
+					nothing is redeployed until you save.
+					{#if !historyPersistent}
+						These are held in memory, so restarting TrueWeb clears them.
+					{/if}
+				</p>
+				<ul class="versions">
+					{#each versions as v (v.id)}
+						<li>
+							<div class="when">
+								<span class="rel">{formatAgo(v.savedAt)}</span>
+								<span class="abs">{new Date(v.savedAt).toLocaleString()} · {v.lines} lines</span>
+							</div>
+							<button class="ghost" disabled={restoring !== null} onclick={() => restore(v.id)}>
+								{restoring === v.id ? 'Loading…' : 'Restore'}
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
 
 	{#if showDiff && dirty}
 		<section class="card">
@@ -382,6 +463,68 @@
 		color: #cfd6e6;
 		white-space: pre;
 		-webkit-overflow-scrolling: touch;
+	}
+	.disclose {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		min-height: 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		text-align: left;
+	}
+	.disclose h2 {
+		margin: 0;
+		flex: 1;
+	}
+	.count {
+		min-width: 22px;
+		padding: 1px 7px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		color: var(--text-dim);
+		font-size: 12px;
+		font-weight: 700;
+		text-align: center;
+	}
+	.chev {
+		color: var(--text-dim);
+		font-size: 18px;
+		width: 18px;
+		text-align: center;
+	}
+	.versions {
+		list-style: none;
+		margin: 10px 0 0;
+		padding: 0;
+	}
+	.versions li {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 0;
+		border-top: 1px solid var(--border);
+	}
+	.when {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+	.rel {
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.abs {
+		font-size: 11px;
+		color: var(--text-faint);
+	}
+	.versions .ghost {
+		flex: 0 0 auto;
+		margin: 0;
 	}
 	.diff span {
 		display: block;

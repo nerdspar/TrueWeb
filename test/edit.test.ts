@@ -7,6 +7,7 @@ import {
 	nextFreePort
 } from '../src/lib/compose/edit.ts';
 import { inspectCompose } from '../src/lib/compose/inspect.ts';
+import { formatAgo } from '../src/lib/client/actions.ts';
 
 test('rewrites a relative short-syntax bind, keeping the container path', () => {
 	const before = 'services:\n  a:\n    image: x\n    volumes:\n      - ./data:/app/data\n';
@@ -189,4 +190,17 @@ test('the whole clash-to-fix path holds together', () => {
 	const { text, replaced } = replaceHostPort(yaml, from ?? 0, to);
 	assert.equal(replaced, 1);
 	assert.match(text, /- "8000:3001"/);
+});
+
+test('formatAgo reads as a saved-version timestamp should', () => {
+	const now = new Date('2026-09-08T12:00:00Z');
+	const at = (ms: number) => new Date(now.getTime() - ms).toISOString();
+	assert.equal(formatAgo(at(5_000), now), 'just now');
+	assert.equal(formatAgo(at(4 * 60_000), now), '4 minutes ago');
+	assert.equal(formatAgo(at(2 * 3_600_000), now), '2 hours ago');
+	assert.equal(formatAgo(at(26 * 3_600_000), now), 'yesterday');
+	assert.equal(formatAgo(at(3 * 86_400_000), now), '3 days ago');
+	// Past a week the date is easier to read than the count.
+	assert.match(formatAgo(at(20 * 86_400_000), now), /Aug/);
+	assert.equal(formatAgo('not a date', now), '—');
 });

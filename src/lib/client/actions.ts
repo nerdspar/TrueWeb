@@ -115,3 +115,35 @@ export function formatBytes(n: number | undefined): string {
 	}
 	return `${v < 10 && u > 0 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
 }
+
+/**
+ * "4 minutes ago" for a saved-version list. Intl.RelativeTimeFormat rather than
+ * a hand-rolled table, and it falls back to the absolute date past a week,
+ * where "13 days ago" stops being easier to read than the date itself.
+ */
+export function formatAgo(iso: string, now: Date = new Date()): string {
+	const then = new Date(iso);
+	if (Number.isNaN(then.getTime())) return '—';
+	const seconds = Math.round((then.getTime() - now.getTime()) / 1000);
+	const past = Math.abs(seconds);
+	if (past < 45) return 'just now';
+
+	const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+	const steps: [Intl.RelativeTimeFormatUnit, number][] = [
+		['minute', 60],
+		['hour', 3600],
+		['day', 86400]
+	];
+	if (past >= 7 * 86400) {
+		return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
+	let unit: Intl.RelativeTimeFormatUnit = 'second';
+	let divisor = 1;
+	for (const [u, d] of steps) {
+		if (past >= d) {
+			unit = u;
+			divisor = d;
+		}
+	}
+	return rtf.format(Math.round(seconds / divisor), unit);
+}

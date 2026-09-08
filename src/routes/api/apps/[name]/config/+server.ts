@@ -1,7 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getClient, serviceStatus } from '$lib/server/service';
-import { updateCustomApp } from '$lib/server/appconfig';
+import { appConfig, configToYaml, updateCustomApp } from '$lib/server/appconfig';
+import { history } from '$lib/server/history';
 import { validateAppName, inspectCompose } from '$lib/compose/inspect';
 import { middlewareFailed } from '$lib/server/mwerror';
 
@@ -11,6 +12,11 @@ import { middlewareFailed } from '$lib/server/mwerror';
  *
  * The YAML is re-validated here: the client checks before sending, but a
  * request body is never taken on trust.
+ *
+ * The compose being replaced is recorded first, so a bad edit can be undone
+ * (§5.3). It's read back from the middleware rather than taken from the request:
+ * what the client thinks was live is a guess, and the point of the record is to
+ * be the state that actually was.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	if (!serviceStatus().ready) error(503, 'TrueNAS is not reachable.');
@@ -26,6 +32,15 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	const client = getClient();
 	try {
+		// Best-effort: failing to snapshot must not block the save the user asked
+		// for. Losing an undo is worse than not having one, but refusing to save
+		// because of it would be worse still.
+		try {
+			history.record(name, configToYaml(await appConfig(client, name)));
+		} catch {
+			/* no history for this save */
+		}
+
 		const { id, done } = await updateCustomApp(client, name, compose);
 		void done.catch(() => {});
 		return json({ ok: true, jobId: id });

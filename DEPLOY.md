@@ -80,6 +80,14 @@ phone: **Share → Add to Home Screen**.
   TrueNAS UI is on **444** — use `10.0.1.14:444`.
 - **`TRUENAS_VERIFY_TLS: "false"`** is normal: TrueNAS serves a self-signed
   certificate.
+- **`TRUEWEB_STATE_DIR` is optional, and off by default on purpose.** Set it to
+  a mounted directory and TrueWeb keeps the last 10 saved composes per app, so a
+  bad YAML edit survives a restart. Left unset, that history lives in memory and
+  is cleared whenever the container restarts. The default is unset because a
+  compose file holds its app's environment verbatim — and TrueWeb's own compose
+  holds `TRUENAS_API_KEY`, which §7 says is never written to disk. Turning this
+  on is a deliberate trade of that rule for a durable undo. The file is written
+  `0600`; put it somewhere only root can read.
 - **The `/var/log/app_lifecycle.log` mount is not optional if you want to know
   why a deploy failed.** When an app fails to come up, TrueNAS records a
   one-line error pointing at that file and nothing more — the job itself
