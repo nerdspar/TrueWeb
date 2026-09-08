@@ -14,4 +14,15 @@ declare global {
 	}
 }
 
+declare module 'svelte/elements' {
+	interface HTMLAttributes<T> {
+		/**
+		 * Non-standard WebKit attribute, absent from Svelte's element typings.
+		 * §5.2 requires it off: iOS autocorrect otherwise silently mangles image
+		 * tags and environment values in a pasted compose file.
+		 */
+		autocorrect?: 'on' | 'off';
+	}
+}
+
 export {};

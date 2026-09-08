@@ -240,11 +240,15 @@
 <header class="head">
 	<div class="titlerow">
 		<h1>Apps</h1>
-		{#if data.reachable && pendingUpdates > 0}
-			<a class="updates" href="/updates" title="Review and update these apps">
-				{pendingUpdates} update{pendingUpdates === 1 ? '' : 's'}
-			</a>
-		{/if}
+		<div class="headactions">
+			{#if data.reachable && pendingUpdates > 0}
+				<a class="updates" href="/updates" title="Review and update these apps">
+					{pendingUpdates} update{pendingUpdates === 1 ? '' : 's'}
+				</a>
+			{/if}
+			<!-- Persistent entry to the compose paste flow (§5.2). -->
+			<a class="add" href="/apps/new" aria-label="Add an app" title="Add an app">+</a>
+		</div>
 	</div>
 
 	{#if data.reachable && data.docker && !dockerHealthy}
@@ -376,9 +380,29 @@
 	}
 	.titlerow {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
+	}
+	.headactions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.add {
+		display: grid;
+		place-items: center;
+		width: 40px;
+		height: 40px;
+		min-height: 40px;
+		border-radius: 12px;
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		color: var(--text);
+		font-size: 24px;
+		font-weight: 600;
+		line-height: 1;
+		text-decoration: none;
 	}
 	h1 {
 		margin: 0;

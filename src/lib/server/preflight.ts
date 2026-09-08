@@ -8,40 +8,10 @@
 import { getClient } from './service.ts';
 import { DATASET_PARENTS } from './config.ts';
 import { listApps, statPath, usedPorts, type StatData } from './truenas/methods.ts';
-import {
-	ancestorsOf,
-	missingSegments,
-	recommendKind,
-	mntToDataset,
-	type ProvisionKind
-} from '$lib/compose/paths';
+import { ancestorsOf, missingSegments, recommendKind, mntToDataset } from '$lib/compose/paths';
+import type { PathReport, PreflightResult } from '$lib/compose/types';
 
-export interface PathReport {
-	path: string;
-	exists: boolean;
-	/** Present when the path already exists. */
-	type?: StatData['type'];
-	isMountpoint?: boolean;
-	uid?: number;
-	gid?: number;
-	owner?: string | null;
-	/** Deepest ancestor that exists — where creation would start. */
-	existingAncestor: string | null;
-	/** Segments that need creating, outermost first. */
-	missing: string[];
-	/** What we'd create by default (§5.2). */
-	recommended: ProvisionKind;
-	/** The ZFS name a dataset would take, when a dataset is possible at all. */
-	datasetName: string | null;
-	/** Why a dataset isn't on offer, when it isn't. */
-	note?: string;
-}
-
-export interface PreflightResult {
-	nameTaken: boolean;
-	portConflicts: number[];
-	paths: PathReport[];
-}
+export type { PathReport, PreflightResult } from '$lib/compose/types';
 
 export async function preflight(opts: {
 	name: string;
