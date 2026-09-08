@@ -24,6 +24,12 @@ export interface Placeholder {
 	hasDefault: boolean;
 }
 
+/** A bind mount that won't behave as intended on TrueNAS. */
+export interface SuspectPath {
+	source: string;
+	why: 'relative' | 'outside-mnt';
+}
+
 export interface ComposeInspection {
 	ok: boolean;
 	error?: ComposeError;
@@ -33,6 +39,8 @@ export interface ComposeInspection {
 	/** Absolute /mnt bind-mount sources, for stat + provisioning. */
 	hostPaths: string[];
 	placeholders: Placeholder[];
+	/** Bind mounts that need editing before this will work (§5.2). */
+	suspectPaths: SuspectPath[];
 	puid?: number;
 	pgid?: number;
 }
@@ -122,7 +130,11 @@ function collectPorts(entry: unknown, out: Set<number>): void {
 
 /* ───────────────────────────────── volumes ────────────────────────────────── */
 
-function collectHostPath(entry: unknown, out: Set<string>): void {
+function collectHostPath(
+	entry: unknown,
+	out: Set<string>,
+	suspect: Map<string, SuspectPath['why']>
+): void {
 	let source: unknown;
 	if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
 		const o = entry as Record<string, unknown>;
@@ -133,10 +145,25 @@ function collectHostPath(entry: unknown, out: Set<string>): void {
 	}
 	if (typeof source !== 'string') return;
 
-	// Only host paths under /mnt are provisionable on TrueNAS; named volumes and
-	// relative paths are not ours to create.
 	const path = source.trim().replace(/\/+$/, '');
-	if (path.startsWith('/mnt/') && path.length > '/mnt/'.length) out.add(path);
+
+	// Provisionable: a real host path under /mnt.
+	if (path.startsWith('/mnt/') && path.length > '/mnt/'.length) {
+		out.add(path);
+		return;
+	}
+	// A relative bind is meaningless for a TrueNAS custom app — there is no
+	// project directory for it to be relative to.
+	if (/^(\.\.?\/|~\/)/.test(path)) {
+		suspect.set(path, 'relative');
+		return;
+	}
+	// An absolute path outside /mnt lands on the boot pool.
+	if (path.startsWith('/')) {
+		suspect.set(path, 'outside-mnt');
+		return;
+	}
+	// Anything else is a named volume, which is fine and not ours to create.
 }
 
 /* ─────────────────────────────── environment ──────────────────────────────── */
@@ -167,7 +194,8 @@ export function inspectCompose(text: string): ComposeInspection {
 		serviceNames: [],
 		hostPorts: [],
 		hostPaths: [],
-		placeholders: findPlaceholders(text)
+		placeholders: findPlaceholders(text),
+		suspectPaths: []
 	};
 
 	if (!text.trim()) {
@@ -208,6 +236,7 @@ export function inspectCompose(text: string): ComposeInspection {
 
 	const ports = new Set<number>();
 	const paths = new Set<string>();
+	const suspect = new Map<string, SuspectPath['why']>();
 	let puid: number | undefined;
 	let pgid: number | undefined;
 
@@ -217,7 +246,8 @@ export function inspectCompose(text: string): ComposeInspection {
 		const service = svc as Record<string, unknown>;
 
 		if (Array.isArray(service.ports)) for (const p of service.ports) collectPorts(p, ports);
-		if (Array.isArray(service.volumes)) for (const v of service.volumes) collectHostPath(v, paths);
+		if (Array.isArray(service.volumes))
+			for (const v of service.volumes) collectHostPath(v, paths, suspect);
 
 		const env = readEnv(service);
 		// First numeric PUID/PGID wins — it prefills the chown, and is shown
@@ -238,6 +268,7 @@ export function inspectCompose(text: string): ComposeInspection {
 		hostPorts: [...ports].sort((a, b) => a - b),
 		hostPaths: [...paths].sort(),
 		placeholders: base.placeholders,
+		suspectPaths: [...suspect].map(([source, why]) => ({ source, why })),
 		puid,
 		pgid
 	};

@@ -143,3 +143,28 @@ test('substitution output re-parses and yields the substituted values', () => {
 	assert.deepEqual(r.hostPorts, [8081]);
 	assert.match(text, /nginx:latest/);
 });
+
+test('flags relative bind mounts, which are meaningless on TrueNAS', () => {
+	const r = inspectCompose(
+		'services:\n  a:\n    image: x\n    volumes:\n      - ./data:/app/data\n      - ../up:/x\n'
+	);
+	assert.equal(r.ok, true);
+	assert.deepEqual(
+		r.suspectPaths.map((s) => s.why),
+		['relative', 'relative']
+	);
+	assert.deepEqual(r.hostPaths, [], 'relative paths are not provisionable');
+});
+
+test('flags absolute paths outside /mnt, which land on the boot pool', () => {
+	const r = inspectCompose('services:\n  a:\n    image: x\n    volumes:\n      - /opt/data:/d\n');
+	assert.deepEqual(r.suspectPaths, [{ source: '/opt/data', why: 'outside-mnt' }]);
+});
+
+test('named volumes are not flagged — they are legitimate', () => {
+	const r = inspectCompose(
+		'services:\n  a:\n    image: x\n    volumes:\n      - dbdata:/var/lib/db\nvolumes:\n  dbdata:\n'
+	);
+	assert.deepEqual(r.suspectPaths, []);
+	assert.deepEqual(r.hostPaths, []);
+});

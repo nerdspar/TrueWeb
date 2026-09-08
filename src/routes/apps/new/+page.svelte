@@ -73,6 +73,13 @@
 		if (unresolved.length > 0) {
 			out.push(`Fill in ${unresolved.map((p) => p.name).join(', ')}.`);
 		}
+		for (const s of inspection.suspectPaths) {
+			out.push(
+				s.why === 'relative'
+					? `“${s.source}” is a relative path — there's no project folder on TrueNAS for it to sit in. Change it to a path under /mnt.`
+					: `“${s.source}” is outside /mnt, so it would land on the boot pool. Change it to a path under /mnt.`
+			);
+		}
 		return out;
 	});
 
