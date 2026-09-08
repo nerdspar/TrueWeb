@@ -74,6 +74,9 @@ button {
 	font: inherit;
 	color: inherit;
 	cursor: pointer;
+	/* Taps shouldn't select the label text. */
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 a {
