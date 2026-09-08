@@ -11,6 +11,7 @@
 		substitutePlaceholders,
 		validateAppName
 	} from '$lib/compose/inspect';
+	import { repoNameFromUrl, suggestAppName } from '$lib/compose/github';
 	import type { PathReport, PreflightResult } from '$lib/compose/types';
 
 	let { data }: { data: PageData } = $props();
@@ -170,10 +171,9 @@
 			compose = body.text ?? '';
 			runSanitize();
 			if (!name) {
-				// A raw GitHub URL usually names the project two segments up.
-				const guess = url.split('/').filter(Boolean).at(-3) ?? '';
-				const cleaned = guess.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-				if (cleaned && !validateAppName(cleaned)) name = cleaned;
+				const repo = repoNameFromUrl(url);
+				const guess = repo ? suggestAppName(repo) : '';
+				if (guess && !validateAppName(guess)) name = guess;
 			}
 		} catch (err) {
 			toastMsg = (err as Error).message;
@@ -308,17 +308,21 @@
 			<input
 				class="text"
 				bind:value={url}
-				placeholder="https://raw.githubusercontent.com/…"
+				placeholder="https://github.com/owner/repo"
 				spellcheck="false"
 				autocapitalize="off"
 				autocorrect="off"
 				inputmode="url"
-				aria-label="Raw compose URL"
+				aria-label="GitHub URL"
 			/>
 			<button class="ghost" disabled={fetching || !url.trim()} onclick={fetchFromUrl}>
 				{fetching ? '…' : 'Fetch'}
 			</button>
 		</div>
+		<p class="dim small urlhelp">
+			Paste a GitHub repo, folder or file link — a repo is searched for
+			<code>docker-compose.yml</code> and friends.
+		</p>
 
 		<ComposeEditor
 			bind:value={compose}
@@ -601,7 +605,9 @@
 	.urlrow {
 		display: flex;
 		gap: 8px;
-		margin-bottom: 10px;
+	}
+	.urlhelp {
+		margin: 6px 0 10px;
 	}
 	.editrow,
 	.checkrow {
