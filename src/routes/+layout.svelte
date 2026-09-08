@@ -34,7 +34,7 @@
 		{ href: '/', label: 'Apps', icon: 'apps', enabled: true },
 		{ href: '/dashboard', label: 'Dash', icon: 'dash', enabled: true },
 		{ href: '/storage', label: 'Storage', icon: 'storage', enabled: true },
-		{ href: '/datasets', label: 'Data', icon: 'data', enabled: false }
+		{ href: '/datasets', label: 'Data', icon: 'data', enabled: true }
 	];
 
 	const isActive = (href: string) =>
