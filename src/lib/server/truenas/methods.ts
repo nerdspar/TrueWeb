@@ -192,6 +192,75 @@ export function logFollowEvent(appName: string, containerId: string, tailLines =
 	})}`;
 }
 
+/* ── compose deploy + path provisioning (§5.2 / §5.6) ────────────────────── */
+
+/** filesystem.stat result. Verified: api_methods_filesystem.stat.html. */
+export interface StatData {
+	realpath: string;
+	type: 'DIRECTORY' | 'FILE' | 'SYMLINK' | 'OTHER';
+	uid: number;
+	gid: number;
+	mode: number;
+	acl: boolean;
+	is_mountpoint: boolean;
+	user: string | null;
+	group: string | null;
+}
+
+/**
+ * filesystem.stat — verified: [path]. Resolves null when the path doesn't
+ * exist: the middleware raises for a missing path, and "missing" is the normal,
+ * expected answer here rather than a failure.
+ */
+export async function statPath(client: TrueNasClient, path: string): Promise<StatData | null> {
+	try {
+		return await client.call<StatData>('filesystem.stat', [path]);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * pool.dataset.create — verified: [{name, type}] where name is the ZFS path
+ * including the pool and no /mnt prefix. Not a job. Every property is left to
+ * INHERIT from the parent (§5.2: this is provisioning, not a dataset editor).
+ */
+export function createDataset(client: TrueNasClient, datasetName: string): Promise<unknown> {
+	return client.call('pool.dataset.create', [{ name: datasetName, type: 'FILESYSTEM' }]);
+}
+
+/** filesystem.mkdir — verified: [{path, mode}]. Not a job. */
+export function mkdir(client: TrueNasClient, path: string): Promise<unknown> {
+	return client.call('filesystem.mkdir', [{ path, mode: '755' }]);
+}
+
+/** filesystem.chown — verified: [{path, uid, gid, options}]. Is a job. */
+export function chownPath(
+	client: TrueNasClient,
+	path: string,
+	uid: number,
+	gid: number,
+	recursive = true
+) {
+	return client.callJob('filesystem.chown', [{ path, uid, gid, options: { recursive } }]);
+}
+
+/**
+ * app.create for a custom (compose) app — verified: a single params object,
+ * and a job. custom_app must be true, with the YAML in
+ * custom_compose_config_string (§3.5).
+ */
+export function createCustomApp(client: TrueNasClient, appName: string, composeYaml: string) {
+	return client.callJob('app.create', [
+		{ app_name: appName, custom_app: true, custom_compose_config_string: composeYaml }
+	]);
+}
+
+/** app.used_ports — verified: no params, every port in use by any app. */
+export function usedPorts(client: TrueNasClient): Promise<number[]> {
+	return client.call<number[]>('app.used_ports', []);
+}
+
 /** Subscribe to live app state changes (§3.4). */
 export function watchApps(client: TrueNasClient, handler: (u: CollectionUpdate) => void): () => void {
 	return client.subscribe('app.query', handler);
