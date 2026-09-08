@@ -53,8 +53,8 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'app.used_host_ips': { tier: 'read', verified: true },
 	'app.image.query': { tier: 'read' },
 	'app.outdated_docker_images': { tier: 'read', verified: true },
-	'app.upgrade_summary': { tier: 'read' },
-	'app.rollback_versions': { tier: 'read' },
+	'app.upgrade_summary': { tier: 'read', verified: true },
+	'app.rollback_versions': { tier: 'read', verified: true },
 	// Events (dynamic sources): subscribed as `name:{json}` with params.
 	'app.container_log_follow': { tier: 'read', verified: true },
 	'app.stats': { tier: 'read', verified: true },
@@ -68,7 +68,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	// ── apps: tier 2 (confirmation naming the target) ────────────────────────
 	'app.stop': { tier: 2, job: true, verified: true },
 	'app.upgrade': { tier: 2, job: true, verified: true },
-	'app.rollback': { tier: 2, job: true },
+	'app.rollback': { tier: 2, job: true, verified: true },
 	'app.create': { tier: 2, job: true },
 	'app.update': { tier: 2, job: true },
 	'app.pull_images': { tier: 2, job: true },

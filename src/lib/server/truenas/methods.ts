@@ -143,6 +143,36 @@ export function containerIds(
 	]);
 }
 
+/** app.upgrade_summary result. Verified: api_methods_app.upgrade_summary.html. */
+export interface UpgradeSummary {
+	latest_version?: string;
+	latest_human_version?: string;
+	upgrade_version?: string;
+	upgrade_human_version?: string;
+	available_versions_for_upgrade?: {
+		version: string;
+		human_version: string;
+		changelog: string | null;
+	}[];
+}
+
+/**
+ * app.upgrade_summary — what an upgrade would change (§5.1: show this before
+ * upgrading). Verified: (app_name, {app_version}); not a job.
+ */
+export function upgradeSummary(
+	client: TrueNasClient,
+	name: string,
+	appVersion = 'latest'
+): Promise<UpgradeSummary> {
+	return client.call<UpgradeSummary>('app.upgrade_summary', [name, { app_version: appVersion }]);
+}
+
+/** app.rollback_versions — verified: (app_name) → version strings; not a job. */
+export function rollbackVersions(client: TrueNasClient, name: string): Promise<string[]> {
+	return client.call<string[]>('app.rollback_versions', [name]);
+}
+
 /** app.used_host_ips — verified: no params, returns {app_name: [ip, …]}. */
 export function usedHostIps(client: TrueNasClient): Promise<Record<string, string[]>> {
 	return client.call<Record<string, string[]>>('app.used_host_ips', []);

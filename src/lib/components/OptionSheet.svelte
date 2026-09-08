@@ -1,14 +1,17 @@
 <script lang="ts">
-	// Bottom sheet for choosing the list sort (§5.1). Lower-half reach (§8).
-	type Option = { key: string; label: string; hint: string };
+	// A bottom sheet that picks one option from a list — used for the list sort
+	// (§5.1) and the rollback version picker. Lower-half reach (§8).
+	type Option = { key: string; label: string; hint?: string };
 
 	let {
 		open = $bindable(false),
-		current = 'state',
+		title = 'Choose',
+		current = '',
 		options = [],
 		onselect
 	}: {
 		open?: boolean;
+		title?: string;
 		current?: string;
 		options?: Option[];
 		onselect?: (key: string) => void;
@@ -29,16 +32,16 @@
 		onclick={() => (open = false)}
 		onkeydown={(e) => e.key === 'Escape' && (open = false)}
 	></div>
-	<div class="sheet" role="dialog" aria-modal="true" aria-label="Sort apps">
+	<div class="sheet" role="dialog" aria-modal="true" aria-label={title}>
 		<div class="grip"></div>
-		<h2>Sort by</h2>
+		<h2>{title}</h2>
 		<ul>
 			{#each options as o (o.key)}
 				<li>
 					<button class="opt" class:on={current === o.key} onclick={() => pick(o.key)}>
 						<span class="labels">
 							<span class="label">{o.label}</span>
-							<span class="hint">{o.hint}</span>
+							{#if o.hint}<span class="hint">{o.hint}</span>{/if}
 						</span>
 						<span class="check" aria-hidden="true">{current === o.key ? '✓' : ''}</span>
 					</button>
@@ -62,6 +65,8 @@
 		right: 0;
 		bottom: 0;
 		z-index: 41;
+		max-height: 70dvh;
+		overflow-y: auto;
 		background: var(--surface-2);
 		border-top-left-radius: var(--r-lg);
 		border-top-right-radius: var(--r-lg);
@@ -108,6 +113,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		min-width: 0;
 	}
 	.label {
 		font-size: 16px;

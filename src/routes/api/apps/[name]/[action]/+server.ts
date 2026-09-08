@@ -18,10 +18,11 @@ const ACTIONS: Record<string, string> = {
 	// Catalog version upgrade vs. pulling newer image digests — two different
 	// operations (§3.5), so the caller picks explicitly.
 	upgrade: 'app.upgrade',
-	pull: 'app.pull_images'
+	pull: 'app.pull_images',
+	rollback: 'app.rollback'
 };
 
-export const POST: RequestHandler = async ({ params }) => {
+export const POST: RequestHandler = async ({ params, request }) => {
 	const name = params.name ?? '';
 	const action = params.action ?? '';
 
@@ -31,6 +32,16 @@ export const POST: RequestHandler = async ({ params }) => {
 	if (!serviceStatus().ready) error(503, 'TrueNAS is not reachable.');
 
 	const client = getClient();
+
+	// Rollback is the one action that needs a payload: which version to go back
+	// to. Verified v25.10: app.rollback(name, {app_version, rollback_snapshot}).
+	let version = '';
+	if (method === 'app.rollback') {
+		const body = (await request.json().catch(() => ({}))) as { version?: unknown };
+		version = typeof body.version === 'string' ? body.version : '';
+		if (!version) error(400, 'A target version is required to roll back.');
+	}
+
 	// Verified v25.10: app.upgrade takes (name, {app_version}); app.pull_images
 	// takes (name, {redeploy}); the rest take (name).
 	const args =
@@ -38,7 +49,9 @@ export const POST: RequestHandler = async ({ params }) => {
 			? [name, { app_version: 'latest' }]
 			: method === 'app.pull_images'
 				? [name, { redeploy: true }]
-				: [name];
+				: method === 'app.rollback'
+					? [name, { app_version: version, rollback_snapshot: true }]
+					: [name];
 
 	try {
 		const { id, done } = await client.callJob(method, args);

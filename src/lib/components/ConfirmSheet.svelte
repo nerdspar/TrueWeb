@@ -82,6 +82,11 @@
 	p {
 		margin: 0 0 18px;
 		color: var(--text-dim);
+		/* Upgrade summaries arrive as a version line plus changelog excerpt. */
+		white-space: pre-wrap;
+		max-height: 40dvh;
+		overflow-y: auto;
+		overflow-wrap: anywhere;
 	}
 	.actions {
 		display: flex;

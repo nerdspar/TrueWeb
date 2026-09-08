@@ -1,13 +1,14 @@
 /** Shared client-side helpers for the app lifecycle actions (§5.1 / §6). */
 
-export type Action = 'start' | 'stop' | 'restart' | 'upgrade' | 'pull';
+export type Action = 'start' | 'stop' | 'restart' | 'upgrade' | 'pull' | 'rollback';
 
 export const VERB: Record<Action, string> = {
 	start: 'Start',
 	stop: 'Stop',
 	restart: 'Restart',
 	upgrade: 'Update',
-	pull: 'Update'
+	pull: 'Update',
+	rollback: 'Roll back'
 };
 
 export const GERUND: Record<Action, string> = {
@@ -15,7 +16,8 @@ export const GERUND: Record<Action, string> = {
 	stop: 'Stopping',
 	restart: 'Restarting',
 	upgrade: 'Updating',
-	pull: 'Updating'
+	pull: 'Updating',
+	rollback: 'Rolling back'
 };
 
 /** Tier 1 actions go through on one tap; tier 2 needs a confirmation (§6). */
@@ -24,7 +26,8 @@ export const NEEDS_CONFIRM: Record<Action, boolean> = {
 	restart: false,
 	stop: true,
 	upgrade: true,
-	pull: true
+	pull: true,
+	rollback: true
 };
 
 /** What a tier-2 confirmation should say it's about to do. */
@@ -36,6 +39,8 @@ export function confirmMessage(action: Action): string {
 			return 'Upgrade to the latest catalog version and redeploy.';
 		case 'pull':
 			return 'Pull the latest images and redeploy.';
+		case 'rollback':
+			return 'Roll back to the selected version. A snapshot is taken first.';
 		default:
 			return '';
 	}
@@ -68,8 +73,17 @@ export function updateKind(app: UpdatableApp): string {
  * Kick off a lifecycle action. Resolves with the job id so the caller can
  * correlate progress from the event stream; throws with a readable message.
  */
-export async function postAction(name: string, action: Action): Promise<number | undefined> {
-	const res = await fetch(`/api/apps/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+export async function postAction(
+	name: string,
+	action: Action,
+	payload?: Record<string, unknown>
+): Promise<number | undefined> {
+	const res = await fetch(`/api/apps/${encodeURIComponent(name)}/${action}`, {
+		method: 'POST',
+		...(payload
+			? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }
+			: {})
+	});
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}) as { message?: string });
 		throw new Error(body.message ?? `HTTP ${res.status}`);

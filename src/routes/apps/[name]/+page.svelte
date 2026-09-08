@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import type { AppStats, LogLine } from '$lib/server/truenas/methods';
+	import type { AppStats, LogLine, UpgradeSummary } from '$lib/server/truenas/methods';
 	import StateBadge from '$lib/components/StateBadge.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
+	import OptionSheet from '$lib/components/OptionSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import {
 		postAction,
@@ -36,6 +37,12 @@
 	let confirmOpen = $state(false);
 	let confirmProps = $state({ title: '', message: '', confirmLabel: 'Confirm', danger: false });
 	let confirmRun: (() => void) | null = null;
+
+	// Upgrade summary + rollback versions, fetched on demand — an upgrade summary
+	// hits the catalog, so it isn't worth paying for on every page open.
+	let versionInfo = $state<{ summary: UpgradeSummary | null; rollback: string[] } | null>(null);
+	let loadingVersions = $state(false);
+	let rollbackOpen = $state(false);
 
 	const app = $derived(data.app);
 	// NB: must not be called `state` — a variable of that name turns every
@@ -100,8 +107,79 @@
 		pendingJob = null;
 	}
 
+	async function ensureVersions() {
+		if (versionInfo) return versionInfo;
+		loadingVersions = true;
+		try {
+			const res = await fetch(`/api/apps/${encodeURIComponent(data.name)}/versions`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			versionInfo = await res.json();
+			return versionInfo;
+		} catch (err) {
+			toastMsg = `Couldn't load version info: ${(err as Error).message}`;
+			return null;
+		} finally {
+			loadingVersions = false;
+		}
+	}
+
+	/** Changelogs arrive as markup; render them as readable plain text. */
+	function excerpt(text: string | null | undefined, max = 320): string {
+		if (!text) return '';
+		const flat = text
+			.replace(/<[^>]*>/g, '')
+			.replace(/\s+\n/g, '\n')
+			.trim();
+		return flat.length > max ? `${flat.slice(0, max).trimEnd()}…` : flat;
+	}
+
+	/** §5.1: show what an upgrade changes before running it. */
+	async function requestUpgrade() {
+		if (!app) return;
+		const info = await ensureVersions();
+		const s = info?.summary;
+		const from = app.human_version ?? app.version ?? 'current';
+		const to = s?.upgrade_human_version ?? s?.latest_human_version ?? 'latest';
+		const notes = excerpt(s?.available_versions_for_upgrade?.[0]?.changelog);
+		confirmProps = {
+			title: `Update ${app.name}?`,
+			message: `${from}  →  ${to}${notes ? `\n\n${notes}` : ''}`,
+			confirmLabel: 'Update',
+			danger: false
+		};
+		confirmRun = () => runAction('upgrade');
+		confirmOpen = true;
+	}
+
+	async function openRollback() {
+		const info = await ensureVersions();
+		const list = info?.rollback ?? [];
+		if (list.length === 0) {
+			toastMsg = 'No previous versions are available to roll back to.';
+			return;
+		}
+		rollbackOpen = true;
+	}
+
+	function chooseRollback(version: string) {
+		if (!app) return;
+		confirmProps = {
+			title: `Roll back ${app.name}?`,
+			message: `Roll back to ${version}. A snapshot is taken first.`,
+			confirmLabel: 'Roll back',
+			danger: true
+		};
+		confirmRun = () => runAction('rollback', { version });
+		confirmOpen = true;
+	}
+
 	function requestAction(action: Action) {
 		if (!app) return;
+		// A catalog upgrade shows its summary first (§5.1).
+		if (action === 'upgrade') {
+			void requestUpgrade();
+			return;
+		}
 		if (NEEDS_CONFIRM[action]) {
 			confirmProps = {
 				title: `${VERB[action]} ${app.name}?`,
@@ -116,12 +194,12 @@
 		}
 	}
 
-	async function runAction(action: Action) {
+	async function runAction(action: Action, payload?: Record<string, unknown>) {
 		if (!app) return;
 		pendingAction = action;
 		pendingPct = undefined;
 		try {
-			const jobId = await postAction(app.name, action);
+			const jobId = await postAction(app.name, action, payload);
 			pendingJob = jobId ?? null;
 		} catch (err) {
 			toastMsg = `${VERB[action]} failed: ${(err as Error).message}`;
@@ -170,6 +248,13 @@
 		{#if updateAction}
 			<button class="act update" disabled={busy} onclick={() => requestAction(updateAction)}>
 				⬆ Update
+			</button>
+		{/if}
+		{#if !app.custom_app}
+			<!-- Rollback is a catalog-version concept, so it isn't offered on a
+			     custom app (§3.5). Versions are fetched on tap. -->
+			<button class="act" disabled={busy || loadingVersions} onclick={openRollback}>
+				{loadingVersions ? '… Rollback' : '⟲ Rollback'}
 			</button>
 		{/if}
 	</div>
@@ -276,6 +361,12 @@
 	</section>
 {/if}
 
+<OptionSheet
+	bind:open={rollbackOpen}
+	title="Roll back to"
+	options={(versionInfo?.rollback ?? []).map((v) => ({ key: v, label: v }))}
+	onselect={chooseRollback}
+/>
 <ConfirmSheet
 	bind:open={confirmOpen}
 	title={confirmProps.title}

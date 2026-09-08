@@ -5,7 +5,7 @@
 	import StateBadge from '$lib/components/StateBadge.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
-	import SortSheet from '$lib/components/SortSheet.svelte';
+	import OptionSheet from '$lib/components/OptionSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import {
 		postAction,
@@ -347,8 +347,9 @@
 	{/if}
 {/if}
 
-<SortSheet
+<OptionSheet
 	bind:open={sortOpen}
+	title="Sort by"
 	current={sort}
 	options={SORT_OPTS}
 	onselect={(k) => (sort = k as Sort)}
