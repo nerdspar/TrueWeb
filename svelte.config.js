@@ -7,6 +7,11 @@ export default {
 	kit: {
 		// adapter-node: the build runs as `node build`, matching the Dockerfile
 		// and the Seek deploy pattern.
-		adapter: adapter()
+		adapter: adapter(),
+		serviceWorker: {
+			// Registered by hand in +layout.svelte, production only — a service
+			// worker caching assets during `vite dev` just confuses development.
+			register: false
+		}
 	}
 };

@@ -1,8 +1,32 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 
 	let { children } = $props();
+
+	let online = $state(true);
+
+	onMount(() => {
+		online = navigator.onLine;
+		const goOnline = () => (online = true);
+		const goOffline = () => (online = false);
+		addEventListener('online', goOnline);
+		addEventListener('offline', goOffline);
+
+		// Production only (svelte.config.js disables auto-registration) so a
+		// cached worker can't shadow assets during development.
+		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/service-worker.js', { type: 'classic' }).catch(() => {
+				/* a failed registration must never break the app */
+			});
+		}
+
+		return () => {
+			removeEventListener('online', goOnline);
+			removeEventListener('offline', goOffline);
+		};
+	});
 
 	// M2 ships the Apps tab only (§11). The other tabs are placeholders so the
 	// bottom-nav shape is real, but they are not linked until their milestone.
@@ -18,6 +42,12 @@
 </script>
 
 <div class="app">
+	{#if !online}
+		<div class="offline" role="status">
+			Offline — showing the last known state
+		</div>
+	{/if}
+
 	<main>
 		{@render children()}
 	</main>
@@ -50,6 +80,16 @@
 		flex: 1;
 		/* Clear the fixed bottom nav + home indicator. */
 		padding-bottom: calc(var(--nav-h) + var(--sa-bottom) + 8px);
+	}
+
+	.offline {
+		padding: calc(var(--sa-top) + 8px) 16px 8px;
+		background: color-mix(in srgb, var(--warn) 18%, var(--surface));
+		border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+		color: var(--text);
+		font-size: 13px;
+		font-weight: 600;
+		text-align: center;
 	}
 
 	.tabbar {

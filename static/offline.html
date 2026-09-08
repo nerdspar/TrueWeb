@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#07080b" />
+		<title>TrueWeb — offline</title>
+		<!-- Served from the service worker cache when a navigation fails, so
+		     everything here is inline (§9: a clear can't-reach state, never a
+		     broken white page). -->
+		<style>
+			:root {
+				color-scheme: dark;
+			}
+			body {
+				margin: 0;
+				min-height: 100dvh;
+				display: grid;
+				place-items: center;
+				padding: 24px calc(24px + env(safe-area-inset-right)) 24px
+					calc(24px + env(safe-area-inset-left));
+				background: #07080b;
+				color: #eef1f8;
+				font:
+					16px/1.45 -apple-system,
+					BlinkMacSystemFont,
+					system-ui,
+					sans-serif;
+				text-align: center;
+			}
+			.mark {
+				width: 64px;
+				height: 64px;
+				border-radius: 16px;
+				margin: 0 auto 18px;
+				background: linear-gradient(135deg, #00c2ff 0%, #3b6eff 55%, #6d5eff 100%);
+			}
+			h1 {
+				font-size: 22px;
+				margin: 0 0 8px;
+			}
+			p {
+				margin: 0 0 8px;
+				color: #9aa3b8;
+				max-width: 32ch;
+			}
+			button {
+				margin-top: 20px;
+				min-height: 48px;
+				padding: 0 22px;
+				border: 0;
+				border-radius: 14px;
+				font: inherit;
+				font-weight: 700;
+				color: #04070f;
+				background: linear-gradient(135deg, #00c2ff 0%, #3b6eff 55%, #6d5eff 100%);
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<div class="mark"></div>
+			<h1>Can’t reach TrueWeb</h1>
+			<p>This device looks offline, or the TrueWeb server isn’t reachable on the network.</p>
+			<p>Nothing was lost — reconnect and try again.</p>
+			<button onclick="location.reload()">Retry</button>
+		</main>
+	</body>
+</html>
