@@ -46,6 +46,20 @@ services:
       # Leave empty unless you hit that; see DEPLOY.md.
       TRUENAS_TLS_SERVERNAME: "" # ⬅ TRUENAS_TLS_SERVERNAME (optional)
 
+      # ── Compose edit history (optional, off by default) ─────────────────
+      # Set this to a mounted directory and TrueWeb keeps the last 10 saved
+      # composes per app, so a bad YAML edit survives a restart. Left empty,
+      # that history lives in memory and is cleared when the container
+      # restarts.
+      #
+      # It is off by default deliberately: a compose file holds its app's
+      # environment verbatim, and TrueWeb's own compose holds
+      # TRUENAS_API_KEY — which §7 says is never written to disk. Turning this
+      # on trades that rule for a durable undo. The file is written 0600; put
+      # it somewhere only root can read, and uncomment the matching volume
+      # below.
+      TRUEWEB_STATE_DIR: "" # ⬅ e.g. /data (optional)
+
       # ── App gate (optional) ─────────────────────────────────────────────
       # A single shared passcode as a bcrypt hash. Leave both empty on a
       # trusted LAN and TrueWeb is ungated. Set them before exposing it
@@ -81,6 +95,11 @@ services:
       # so TrueWeb reads it from disk. Read-only, and it is the difference
       # between "failed, check a log you can't see" and being shown the reason.
       - /var/log/app_lifecycle.log:/var/log/app_lifecycle.log:ro
+
+      # Uncomment together with TRUEWEB_STATE_DIR above to keep compose edit
+      # history across restarts. Read the note there first — it puts app
+      # environments, secrets included, on disk.
+      # - /mnt/NAS/Apps/trueweb-state:/data
 
     healthcheck:
       # Reports unhealthy only if the web server is down or the API key is
