@@ -43,3 +43,15 @@ export function configToYaml(config: AppComposeConfig): string {
 export function updateCustomApp(client: TrueNasClient, name: string, composeYaml: string) {
 	return client.callJob('app.update', [name, { custom_compose_config_string: composeYaml }]);
 }
+
+/**
+ * app.convert_to_custom — verified against v25.10
+ * (api_methods_app.convert_to_custom.html): a single `app_name` string, and it
+ * is a job. The result is an AppEntry, but the caller only needs the job.
+ *
+ * One-way: it severs the app from catalog updates, which is why §5.3 puts it
+ * behind an explicit warning and §6 rates it tier 2.5 (type the name).
+ */
+export function convertToCustom(client: TrueNasClient, name: string) {
+	return client.callJob('app.convert_to_custom', [name]);
+}

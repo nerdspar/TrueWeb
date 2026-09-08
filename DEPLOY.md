@@ -162,6 +162,11 @@ reads the clashing port out of the failure and offers a replacement inline, in
 the failure panel itself. The suggestion starts at 8000 rather than one above
 the clash, because whatever holds the port usually holds its neighbours too.
 
+**"Convert to custom app" and then catalog updates stop** — that's what it
+does, and it can't be undone: `app.convert_to_custom` is one-way in TrueNAS
+itself, not just in TrueWeb. Convert when you want to edit the compose and take
+over maintaining it. The app's data and configuration survive the conversion.
+
 **A dataset won't create** — TrueWeb passes `aclmode: DISCARD`, which the
 middleware requires when the parent's `acltype` is POSIX or OFF. Any other
 refusal is shown verbatim; it's usually a missing role from step 1.

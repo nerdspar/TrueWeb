@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import type { PageData } from './$types';
 	import ComposeEditor from '$lib/components/ComposeEditor.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
@@ -54,6 +54,32 @@
 			}
 		}, 400);
 	});
+
+	// ── convert to custom (§5.3, tier 2.5) ────────────────────────────────
+	let convertOpen = $state(false);
+	let converting = $state(false);
+	let convertPct = $state<number | undefined>(undefined);
+	let convertJob: number | null = null;
+
+	async function runConvert() {
+		converting = true;
+		failure = null;
+		convertPct = undefined;
+		try {
+			const res = await fetch(`/api/apps/${encodeURIComponent(data.name)}/convert`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ confirm: data.name })
+			});
+			const body = (await res.json().catch(() => ({}))) as { jobId?: number; message?: string };
+			if (!res.ok) throw new Error(body.message ?? 'The conversion was refused.');
+			convertJob = body.jobId ?? null;
+		} catch (err) {
+			converting = false;
+			convertJob = null;
+			toastMsg = (err as Error).message ?? 'Could not convert the app.';
+		}
+	}
 
 	// ── saved versions (§5.3) ──────────────────────────────────────────────
 	type VersionMeta = { id: number; savedAt: string; bytes: number; lines: number };
@@ -143,6 +169,26 @@
 				exception?: string | null;
 				progress?: { percent?: number };
 			};
+			if (convertJob !== null && job.id === convertJob) {
+				if (typeof job.progress?.percent === 'number') convertPct = job.progress.percent;
+				if (job.state === 'SUCCESS') {
+					convertJob = null;
+					converting = false;
+					// Re-run the load: it is a custom app now, so this screen becomes
+					// the YAML editor rather than the read-only view.
+					toastMsg = 'Converted. The compose is editable now.';
+					void invalidateAll();
+				} else if (job.state === 'FAILED' || job.state === 'ABORTED') {
+					convertJob = null;
+					converting = false;
+					failure = {
+						error: job.error ?? 'The conversion failed.',
+						exception: job.exception ?? ''
+					};
+				}
+				return;
+			}
+
 			if (saveJob === null || job.id !== saveJob) return;
 			if (typeof job.progress?.percent === 'number') savePct = job.progress.percent;
 			if (job.state === 'SUCCESS') {
@@ -233,17 +279,28 @@
 			read-only rather than reproducing that form.
 		</p>
 		<pre>{JSON.stringify(data.config, null, 2)}</pre>
-		<p class="dim small">
-			Converting it to a custom app is what unlocks YAML editing, and it's one-way — it severs the
-			app from catalog updates. That isn't wired up here yet.
-		</p>
+		<div class="convert">
+			<strong>Convert to a custom app?</strong>
+			<p>
+				This is what unlocks YAML editing. It is <em>one-way</em>: TrueNAS has no route back, and
+				the app stops receiving catalog updates — you'd be maintaining its compose yourself from
+				then on. Its data and configuration are kept.
+			</p>
+			{#if converting}
+				<div class="progress" role="status">
+					<span class="spin" aria-hidden="true"></span>
+					<span>Converting…{convertPct ? ` ${convertPct}%` : ''}</span>
+				</div>
+			{:else}
+				<button class="warn" onclick={() => (convertOpen = true)}>Convert to custom app</button>
+			{/if}
+		</div>
 	</section>
 {:else}
 	<section class="card">
 		<h2>Compose</h2>
 		<ComposeEditor value={yaml} onchange={(v) => (edited = v)} onpasted={runSanitize} rows={18} />
 		<div class="row">
-			<button class="ghost" onclick={runSanitize}>Clean up</button>
 			{#if dirty}
 				<button class="ghost" onclick={() => (showDiff = !showDiff)}>
 					{showDiff ? 'Hide' : 'Show'} changes
@@ -345,6 +402,15 @@
 	</div>
 {/if}
 
+<ConfirmSheet
+	bind:open={convertOpen}
+	title="Convert {data.name} to a custom app?"
+	message="One-way. The app stops getting catalog updates and you maintain its compose from then on. Its data and configuration are kept."
+	confirmLabel="Convert"
+	confirmName={data.name}
+	danger
+	onconfirm={runConvert}
+/>
 <ConfirmSheet
 	bind:open={confirmOpen}
 	title={`Update ${data.name}?`}
@@ -463,6 +529,34 @@
 		color: #cfd6e6;
 		white-space: pre;
 		-webkit-overflow-scrolling: touch;
+	}
+	/* The conversion offer: warned, not hidden (§5.3). */
+	.convert {
+		margin-top: 12px;
+		padding: 12px 14px;
+		border-radius: var(--r-sm);
+		background: color-mix(in srgb, var(--warn) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--warn) 36%, transparent);
+	}
+	.convert strong {
+		display: block;
+		margin-bottom: 6px;
+		font-size: 14px;
+	}
+	.convert p {
+		margin: 0 0 12px;
+		font-size: 13px;
+		color: var(--text-dim);
+	}
+	.warn {
+		width: 100%;
+		min-height: 46px;
+		border-radius: var(--r-sm);
+		border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent);
+		background: color-mix(in srgb, var(--warn) 20%, var(--surface-2));
+		color: var(--text);
+		font-size: 14px;
+		font-weight: 600;
 	}
 	.disclose {
 		display: flex;
