@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { replaceVolumeSource, replaceHostPort } from '../src/lib/compose/edit.ts';
+import { replaceVolumeSource, replaceHostPort, extractBoundPort } from '../src/lib/compose/edit.ts';
 import { inspectCompose } from '../src/lib/compose/inspect.ts';
 
 test('rewrites a relative short-syntax bind, keeping the container path', () => {
@@ -126,4 +126,35 @@ test('rejects nonsense port changes', () => {
 	assert.equal(replaceHostPort(before, 8080, 8080).replaced, 0);
 	assert.equal(replaceHostPort(before, 8080, 0).replaced, 0);
 	assert.equal(replaceHostPort(before, 8080, 70000).replaced, 0);
+});
+
+/* ───────────────────── reading a clash out of a failure ──────────────────── */
+
+test('extracts the clashing host port from the real lifecycle-log wording', () => {
+	// Taken verbatim from a failed 'up' on this box.
+	const line =
+		"Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint ix-uptime-kuma-2-uptime-kuma-1 (baf16600b308): failed to bind host port for 0.0.0.0:3002:172.16.32.2:3001/tcp: address already in use";
+	assert.equal(extractBoundPort(line), 3002, 'must pick the host port, not the container port');
+});
+
+test('handles the other shapes Docker uses', () => {
+	assert.equal(extractBoundPort('Bind for 0.0.0.0:8080 failed: port is already allocated'), 8080);
+	assert.equal(extractBoundPort('listen tcp 0.0.0.0:5353: bind: address already in use'), 5353);
+});
+
+test('is silent when the failure is not about a port', () => {
+	assert.equal(extractBoundPort('permission denied on /mnt/NAS/Data'), null);
+	assert.equal(extractBoundPort('pull access denied for ghcr.io/x/y'), null);
+	assert.equal(extractBoundPort(''), null);
+	// A port-shaped string without the tell-tale phrase is not a clash.
+	assert.equal(extractBoundPort('listening on 0.0.0.0:3002'), null);
+});
+
+test('a detected clash feeds straight into the port rewriter', () => {
+	const yaml = 'services:\n  a:\n    image: x\n    ports:\n      - "3002:3001"\n';
+	const port = extractBoundPort('failed to bind host port for 0.0.0.0:3002:172.16.32.2:3001/tcp: address already in use');
+	assert.equal(port, 3002);
+	const { text, replaced } = replaceHostPort(yaml, port ?? 0, 3010);
+	assert.equal(replaced, 1);
+	assert.match(text, /- "3010:3001"/);
 });

@@ -10,6 +10,8 @@
 	 * error names it, say so plainly and give the usual causes instead of
 	 * pretending to have detail we can't get.
 	 */
+	import { extractBoundPort } from '$lib/compose/edit';
+
 	let {
 		error = '',
 		exception = '',
@@ -17,7 +19,8 @@
 		app = '',
 		title = 'It failed',
 		onretry,
-		ondismiss
+		ondismiss,
+		onfixport
 	}: {
 		error?: string | null;
 		exception?: string | null;
@@ -27,6 +30,8 @@
 		title?: string;
 		onretry?: () => void;
 		ondismiss?: () => void;
+		/** Offered when the failure names a clashing host port. */
+		onfixport?: (port: number) => void;
 	} = $props();
 
 	/** The middleware prefixes its errors, e.g. "[EFAULT] …". */
@@ -43,6 +48,15 @@
 	};
 	let lifecycle = $state<Lifecycle | null>(null);
 	let loadingLog = $state(false);
+
+	/**
+	 * A port clash is the one failure pre-flight structurally cannot catch:
+	 * app.used_ports only sees ports held by apps, and v25.10 has no
+	 * system-wide port method. The reason is in the log, so read it from there.
+	 */
+	const clashPort = $derived(
+		extractBoundPort([clean, exception ?? '', ...(lifecycle?.lines ?? [])].join('\n'))
+	);
 
 	// When the error points at the lifecycle log, go and get it.
 	$effect(() => {
@@ -67,6 +81,21 @@
 
 	{#if clean}
 		<p class="msg">{clean}</p>
+	{/if}
+
+	{#if clashPort}
+		<div class="clash">
+			<p>
+				<strong>Port {clashPort} is already taken on the host.</strong>
+				Pre-flight only sees ports used by other apps — TrueNAS has no way to report a port held by
+				anything else, so this one only shows up here.
+			</p>
+			{#if onfixport}
+				<button class="tiny go" onclick={() => onfixport?.(clashPort)}>
+					Change port {clashPort}
+				</button>
+			{/if}
+		</div>
 	{/if}
 
 	{#if lifecycleLog}
@@ -192,6 +221,33 @@
 	}
 	.trace {
 		font-size: 10px;
+	}
+	.clash {
+		margin-top: 10px;
+		padding: 10px 12px;
+		border-radius: var(--r-sm);
+		background: color-mix(in srgb, var(--warn) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+		font-size: 13px;
+	}
+	.clash p {
+		margin: 0;
+	}
+	.tiny {
+		margin-top: 10px;
+		min-height: 40px;
+		padding: 0 14px;
+		border-radius: var(--r-sm);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text);
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.tiny.go {
+		border-color: transparent;
+		color: var(--on-accent);
+		background: var(--accent-grad);
 	}
 	.snippet {
 		max-height: none;

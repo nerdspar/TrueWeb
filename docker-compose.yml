@@ -1,0 +1,91 @@
+# =============================================================================
+# TrueWeb — phone-first TrueNAS app manager.
+# The image is built by GitHub Actions and pulled from GHCR; TrueNAS just runs
+# it. There is no .env file — paste your values at the ⬅ markers below.
+#
+# ── 1. Create the service account and API key (see DEPLOY.md) ────────────────
+#      A dedicated user with only the roles TrueWeb needs, then a user-linked
+#      API key against that account. Do NOT use a FULL_ADMIN or root key: this
+#      container can start, stop and redeploy every app you own.
+#
+# ── 2. Paste your values at the ⬅ markers ────────────────────────────────────
+#
+# ── 3. Log in to GHCR once (private image) and launch ────────────────────────
+#        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
+#        docker compose up -d
+#      Then on the iPhone: http://<nas-ip>:8110 → Share → Add to Home Screen.
+# =============================================================================
+
+services:
+  trueweb:
+    # Built by .github/workflows/docker-publish.yml. To build on the box
+    # instead, comment out `image:` and uncomment `build: .`.
+    image: ghcr.io/nerdspar/trueweb:latest
+    # build: .
+    container_name: trueweb
+    restart: unless-stopped
+    environment:
+      TZ: "America/New_York"
+
+      # ── TrueNAS middleware ──────────────────────────────────────────────
+      # Reach the box directly on the LAN, NOT through the reverse proxy (§10).
+      # If Nginx Proxy Manager owns 443 on this IP, TrueNAS's own UI is on 444.
+      TRUENAS_HOST: "10.0.1.14:444" # ⬅ TRUENAS_HOST
+
+      # Service-account API key. Never logged, never returned in a response.
+      TRUENAS_API_KEY: "PASTE_TRUENAS_API_KEY_HERE" # ⬅ TRUENAS_API_KEY
+
+      # The username the key belongs to — auth.login_ex takes both.
+      TRUENAS_API_KEY_USERNAME: "trueweb" # ⬅ TRUENAS_API_KEY_USERNAME
+
+      # TrueNAS ships a self-signed certificate, so this is normally false on
+      # the LAN. Anything other than "false" is treated as true.
+      TRUENAS_VERIFY_TLS: "false"
+
+      # Only needed if the box refuses a bare-IP handshake (TLS alert 112).
+      # Leave empty unless you hit that; see DEPLOY.md.
+      TRUENAS_TLS_SERVERNAME: "" # ⬅ TRUENAS_TLS_SERVERNAME (optional)
+
+      # ── App gate (optional) ─────────────────────────────────────────────
+      # A single shared passcode as a bcrypt hash. Leave both empty on a
+      # trusted LAN and TrueWeb is ungated. Set them before exposing it
+      # through a reverse proxy or tunnel — it holds an API key that can
+      # restart every app you run.
+      #   Hash:   docker run --rm node:22-alpine sh -c "npm -s i bcryptjs >/dev/null 2>&1; node -e \"console.log(require('bcryptjs').hashSync(process.argv[1],12))\" 'your-passcode'"
+      #   Secret: openssl rand -hex 32
+      TRUEWEB_PASSCODE_HASH: "" # ⬅ TRUEWEB_PASSCODE_HASH (optional)
+      TRUEWEB_SESSION_SECRET: "" # ⬅ TRUEWEB_SESSION_SECRET (required if gated)
+
+      # The path inside this container; see the volume below. Only change it
+      # if you mount the log somewhere else.
+      TRUEWEB_APP_LIFECYCLE_LOG: "/var/log/app_lifecycle.log"
+
+    ports:
+      # host:container — the app listens on 8110 inside the container. Change
+      # the LEFT number if 8110 is taken on your NAS.
+      - "8110:8110"
+
+    volumes:
+      # Why this mount exists: when an app fails to come up, TrueNAS records a
+      # one-line error pointing at this file and nothing else — the job carries
+      # no logs at all, and the only API route to the file needs the HTTP
+      # download endpoint this project doesn't use. The log lives on the host,
+      # so TrueWeb reads it from disk. Read-only, and it is the difference
+      # between "failed, check a log you can't see" and being shown the reason.
+      - /var/log/app_lifecycle.log:/var/log/app_lifecycle.log:ro
+
+    healthcheck:
+      # Reports unhealthy only if the web server is down or the API key is
+      # missing/rejected. A briefly unreachable middleware is normal — a
+      # middleware restart must not make the container look broken.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8110/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

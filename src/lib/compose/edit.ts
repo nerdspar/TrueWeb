@@ -48,6 +48,36 @@ export function replaceVolumeSource(
 }
 
 /**
+ * Pull the clashing host port out of a Docker bind failure.
+ *
+ * This exists because pre-flight cannot catch every clash: app.used_ports only
+ * reports ports held by *apps*, and v25.10 has no system-wide port method, so a
+ * port held by anything else is invisible until the container refuses to start.
+ * When that happens the reason is in the message — so read it, and offer the
+ * fix rather than leaving someone to decode Docker's wording.
+ */
+export function extractBoundPort(text: string): number | null {
+	if (!text || !/already in use|already allocated/i.test(text)) return null;
+
+	const patterns = [
+		// failed to bind host port for 0.0.0.0:3002:172.16.32.2:3001/tcp: address already in use
+		/bind host port for [\d.]+:(\d+)/i,
+		// Bind for 0.0.0.0:3002 failed: port is already allocated
+		/bind for [\d.]+:(\d+) failed/i,
+		// listen tcp 0.0.0.0:3002: bind: address already in use
+		/listen tcp [\d.]+:(\d+)/i
+	];
+
+	for (const re of patterns) {
+		const found = text.match(re)?.[1];
+		if (!found) continue;
+		const port = Number(found);
+		if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+	}
+	return null;
+}
+
+/**
  * Change the *host* side of a published port, in both compose syntaxes:
  *   - short:  `- "8080:80"`, `- 127.0.0.1:8080:80`, `- "8080:80/tcp"`
  *   - long:   `published: 8080`

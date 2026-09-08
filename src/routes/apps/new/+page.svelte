@@ -56,6 +56,8 @@
 	let deployJob: number | null = null;
 	/** A failed deploy stays on screen until dismissed — see JobFailure. */
 	let failure = $state<{ error: string; exception: string } | null>(null);
+	/** A host port the failure named as already taken, offered for fixing. */
+	let clashFix = $state<number | null>(null);
 
 	/** Placeholders come from the raw text so the list doesn't shrink as you fill it. */
 	const placeholders = $derived(findPlaceholders(compose));
@@ -90,8 +92,17 @@
 		return out;
 	});
 
+	/** Relative binds are meaningless here, so they block. */
+	const badPaths = $derived(inspection.suspectPaths.filter((p) => p.why === 'relative'));
+	/**
+	 * An absolute path outside /mnt only cautions. A read-only host mount is a
+	 * legitimate pattern — /etc/localtime, a socket, or the app lifecycle log
+	 * TrueWeb itself mounts — and blocking them all would refuse valid composes.
+	 */
+	const oddPaths = $derived(inspection.suspectPaths.filter((p) => p.why === 'outside-mnt'));
+
 	const canDeploy = $derived(
-		Boolean(pre) && blockers.length === 0 && inspection.suspectPaths.length === 0 && !deploying
+		Boolean(pre) && blockers.length === 0 && badPaths.length === 0 && !deploying
 	);
 
 	// ── draft persistence (§5.2) ───────────────────────────────────────────
@@ -503,7 +514,13 @@
 					{/each}
 				</div>
 			{:else if inspection.hostPorts.length > 0}
-				<p class="ok small">Ports free: {inspection.hostPorts.join(', ')}</p>
+				<p class="ok small">
+					{inspection.hostPorts.join(', ')} — no clash with another app
+				</p>
+				<p class="dim small">
+					TrueNAS can only report ports held by apps, so a port used by anything else won't show
+					up until the container tries to start.
+				</p>
 			{/if}
 
 			{#if pre.paths.length === 0}
@@ -596,18 +613,31 @@
 		{/if}
 	</section>
 
-	{#if inspection.suspectPaths.length > 0}
+	{#if badPaths.length > 0}
 		<section class="card blockers">
 			<h2>These mounts need a real location</h2>
-			{#each inspection.suspectPaths as s (s.source)}
+			{#each badPaths as s (s.source)}
+				<div class="fixpath">
+					<code>{s.source}</code>
+					<p class="small">Relative to nothing — a custom app has no project folder to sit in.</p>
+					<button class="tiny go" onclick={() => openPicker(s.source)}>Choose a location…</button>
+				</div>
+			{/each}
+		</section>
+	{/if}
+
+	{#if oddPaths.length > 0}
+		<section class="card warnbox">
+			<h2>Mounted from outside /mnt</h2>
+			{#each oddPaths as s (s.source)}
 				<div class="fixpath">
 					<code>{s.source}</code>
 					<p class="small">
-						{s.why === 'relative'
-							? 'Relative to nothing — a custom app has no project folder to sit in.'
-							: 'Outside /mnt, so it would land on the boot pool.'}
+						Fine for a read-only host file such as a log or <code>/etc/localtime</code>. If it's
+						meant to hold app data, put it under /mnt — on the boot pool it isn't backed up and
+						isn't part of a pool.
 					</p>
-					<button class="tiny go" onclick={() => openPicker(s.source)}>Choose a location…</button>
+					<button class="tiny" onclick={() => openPicker(s.source)}>Choose a location…</button>
 				</div>
 			{/each}
 		</section>
@@ -639,7 +669,39 @@
 			app={name}
 			onretry={deploy}
 			ondismiss={() => (failure = null)}
+			onfixport={(port) => {
+				// Seed the inline fixer with the clashing port so it can be changed
+				// here rather than by hand in the YAML.
+				clashFix = port;
+				portEdits = { ...portEdits, [port]: String(port + 1) };
+			}}
 		/>
+		{#if clashFix !== null}
+			<section class="card">
+				<h2>Change the clashing port</h2>
+				<div class="fixrow">
+					<code>{clashFix}</code>
+					<span class="arrow" aria-hidden="true">→</span>
+					<input
+						class="text port"
+						value={portEdits[clashFix] ?? ''}
+						oninput={(e) => (portEdits = { ...portEdits, [clashFix!]: e.currentTarget.value })}
+						inputmode="numeric"
+						aria-label="New host port"
+					/>
+					<button
+						class="tiny go"
+						onclick={() => {
+							applyPortChange(clashFix!);
+							clashFix = null;
+							failure = null;
+						}}
+					>
+						Change
+					</button>
+				</div>
+			</section>
+		{/if}
 	{/if}
 
 	<div class="bar">

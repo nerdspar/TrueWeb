@@ -1,0 +1,14 @@
+node_modules
+build
+.svelte-kit
+.git
+.github
+.env
+.env.*
+!.env.example
+docs
+brand
+test
+*.log
+.DS_Store
+truenas-pwa-spec.md
