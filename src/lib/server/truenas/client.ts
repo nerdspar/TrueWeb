@@ -13,6 +13,7 @@
  * `call` / `callJob` / `subscribe` primitives; typed, signature-verified
  * wrappers live in methods.ts.
  */
+import { isIP } from 'node:net';
 import WebSocket, { type RawData } from 'ws';
 import { assertAllowed, isJobMethod } from './allowlist.ts';
 import {
@@ -33,6 +34,14 @@ export interface ClientConfig {
 	verifyTls: boolean;
 	/** Optional PEM CA bundle to trust (alternative to disabling verification). */
 	ca?: string;
+	/**
+	 * TLS SNI server name. When unset, SNI is chosen automatically: none for an
+	 * IP host, none when not verifying TLS (a LAN self-signed box serves its
+	 * default vhost and nginx rejects an unrecognized SNI with alert 112), and
+	 * the hostname otherwise so cert verification can match it. Set explicitly
+	 * only when reaching the middleware through a proxy that needs a given name.
+	 */
+	tlsServername?: string;
 }
 
 export interface AuthMe {
@@ -190,10 +199,28 @@ export class TrueNasClient {
 
 	// ── socket lifecycle ───────────────────────────────────────────────────
 
+	/**
+	 * Decide the SNI name. Returning '' means "send no SNI" (ws honours an empty
+	 * string); returning undefined lets ws derive it from the host. See the
+	 * ClientConfig.tlsServername doc for why we suppress it in the common cases.
+	 */
+	private resolveServername(): string | undefined {
+		if (this.cfg.tlsServername !== undefined) return this.cfg.tlsServername;
+		const host = this.cfg.host.split(':')[0] ?? this.cfg.host;
+		if (isIP(host)) return '';
+		if (!this.cfg.verifyTls) return '';
+		return undefined;
+	}
+
 	private open(): void {
+		const servername = this.resolveServername();
+		this.log.info(
+			`connecting to ${this.url} (verify_tls=${this.cfg.verifyTls}, sni=${servername === '' ? 'none' : (servername ?? 'auto')})`
+		);
 		const ws = new WebSocket(this.url, {
 			rejectUnauthorized: this.cfg.verifyTls,
-			ca: this.cfg.ca
+			ca: this.cfg.ca,
+			...(servername !== undefined ? { servername } : {})
 		});
 		this.ws = ws;
 		ws.on('open', () => {

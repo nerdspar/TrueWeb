@@ -29,6 +29,7 @@ export function loadConfig(): ClientConfig {
 		apiKey: required('TRUENAS_API_KEY'),
 		apiKeyUsername: required('TRUENAS_API_KEY_USERNAME'),
 		verifyTls,
-		ca: caFile ? readFileSync(caFile, 'utf8') : undefined
+		ca: caFile ? readFileSync(caFile, 'utf8') : undefined,
+		tlsServername: process.env.TRUENAS_TLS_SERVERNAME
 	};
 }
