@@ -52,7 +52,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'app.used_ports': { tier: 'read' },
 	'app.used_host_ips': { tier: 'read' },
 	'app.image.query': { tier: 'read' },
-	'app.outdated_docker_images': { tier: 'read' },
+	'app.outdated_docker_images': { tier: 'read', verified: true },
 	'app.upgrade_summary': { tier: 'read' },
 	'app.rollback_versions': { tier: 'read' },
 	'app.container_log_follow': { tier: 'read' },
@@ -66,7 +66,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 
 	// ── apps: tier 2 (confirmation naming the target) ────────────────────────
 	'app.stop': { tier: 2, job: true, verified: true },
-	'app.upgrade': { tier: 2, job: true },
+	'app.upgrade': { tier: 2, job: true, verified: true },
 	'app.rollback': { tier: 2, job: true },
 	'app.create': { tier: 2, job: true },
 	'app.update': { tier: 2, job: true },
@@ -74,6 +74,10 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 
 	// ── apps: tier 2.5 (irreversible; type-to-confirm) ───────────────────────
 	'app.convert_to_custom': { tier: 2.5, job: true },
+
+	// ── docker / apps service (§5.1 health banner) ───────────────────────────
+	'docker.status': { tier: 'read', verified: true },
+	'docker.state': { tier: 'read', verified: true },
 
 	// ── alerts ───────────────────────────────────────────────────────────────
 	'alert.list': { tier: 'read' },

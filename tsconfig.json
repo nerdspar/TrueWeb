@@ -1,25 +1,18 @@
 {
-	// Standalone TypeScript project for M1 (client layer + CLI). No SvelteKit yet
-	// — that arrives with the backend in M2, at which point src/lib/server keeps
-	// its meaning ($lib/server = server-only). We run via tsx and typecheck with
-	// tsc --noEmit, so imports carry explicit .ts extensions (bundler resolution
-	// + allowImportingTsExtensions), which tsx, `node --import tsx`, and tsc all
-	// resolve identically.
+	"extends": "./.svelte-kit/tsconfig.json",
 	"compilerOptions": {
-		"target": "ES2023",
-		"lib": ["ES2023"],
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"allowImportingTsExtensions": true,
-		"verbatimModuleSyntax": true,
-		"noEmit": true,
-		"strict": true,
-		"noUncheckedIndexedAccess": true,
+		"rewriteRelativeImportExtensions": true,
+		"allowJs": true,
+		"checkJs": true,
 		"esModuleInterop": true,
-		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
-		"types": ["node"]
-	},
-	"include": ["src", "scripts", "test"]
+		"skipLibCheck": true,
+		"sourceMap": true,
+		"strict": true,
+		"moduleResolution": "bundler"
+	}
+	// $lib and other aliases are provided by SvelteKit's generated config.
+	// scripts/ and test/ (the M1 CLI + node tests) are type-checked separately
+	// via tsconfig.node.json, since they live outside SvelteKit's src include.
 }

@@ -18,16 +18,47 @@ export interface AppRecord {
 	name: string;
 	state: AppState;
 	upgrade_available?: boolean;
+	image_updates_available?: boolean;
 	human_version?: string;
 	custom_app?: boolean;
 }
 
 /** The trimmed field set the app list needs (§5.1). `select` keeps payloads small (§3.6). */
-const APP_LIST_FIELDS = ['id', 'name', 'state', 'upgrade_available', 'human_version', 'custom_app'];
+const APP_LIST_FIELDS = [
+	'id',
+	'name',
+	'state',
+	'upgrade_available',
+	'image_updates_available',
+	'human_version',
+	'custom_app'
+];
+
+/** docker.status service states, verified against api_methods_docker.status.html. */
+export type DockerServiceStatus =
+	| 'PENDING'
+	| 'RUNNING'
+	| 'STOPPED'
+	| 'INITIALIZING'
+	| 'STOPPING'
+	| 'UNCONFIGURED'
+	| 'FAILED'
+	| 'MIGRATING'
+	| 'MIGRATION_FAILED';
+
+export interface DockerStatus {
+	status: DockerServiceStatus;
+	description: string;
+}
 
 /** auth.me — the currently logged-in user. Verified: no params. */
 export function whoami(client: TrueNasClient): Promise<AuthMe> {
 	return client.call<AuthMe>('auth.me', []);
+}
+
+/** docker.status — Apps-service health for the §5.1 banner. Verified: no params. */
+export function dockerStatus(client: TrueNasClient): Promise<DockerStatus> {
+	return client.call<DockerStatus>('docker.status', []);
 }
 
 /** app.query — list apps with state. Verified: [filters, options]. */

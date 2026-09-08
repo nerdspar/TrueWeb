@@ -1,0 +1,14 @@
+{
+	"name": "TrueWeb",
+	"short_name": "TrueWeb",
+	"description": "Phone-first TrueNAS app manager",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#07080b",
+	"theme_color": "#07080b",
+	"orientation": "portrait",
+	"icons": [
+		{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+	]
+}

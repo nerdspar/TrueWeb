@@ -1,0 +1,101 @@
+/* TrueWeb — single dark theme (§8): near-black ground, electric-blue gradient
+   accent. Mobile-first at 390pt; everything reachable one-handed; 44pt tap
+   targets. No light mode, no switcher. */
+
+:root {
+	/* Ground + surfaces */
+	--bg: #07080b;
+	--surface: #0e1017;
+	--surface-2: #161922;
+	--surface-3: #1e2230;
+	--border: #262b3a;
+
+	/* Text */
+	--text: #eef1f8;
+	--text-dim: #9aa3b8;
+	--text-faint: #616a80;
+
+	/* Electric-blue accent + gradient */
+	--accent: #2f9bff;
+	--accent-2: #6d7bff;
+	--accent-grad: linear-gradient(135deg, #00c2ff 0%, #3b6eff 55%, #6d5eff 100%);
+	--on-accent: #04070f;
+
+	/* State colors — always paired with a shape/label, never color alone (§8) */
+	--ok: #35d07f;
+	--warn: #f5b850;
+	--danger: #ff5d6c;
+	--info: #48b5ff;
+
+	/* Radii + shadow */
+	--r-sm: 8px;
+	--r: 14px;
+	--r-lg: 20px;
+	--shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+	/* Safe-area insets (notch + home indicator) */
+	--sa-top: env(safe-area-inset-top, 0px);
+	--sa-bottom: env(safe-area-inset-bottom, 0px);
+	--sa-left: env(safe-area-inset-left, 0px);
+	--sa-right: env(safe-area-inset-right, 0px);
+
+	/* Bottom nav height, so scroll areas can pad clear of it */
+	--nav-h: 62px;
+
+	--tap: 44px;
+	--font:
+		-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
+	--mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, monospace;
+}
+
+* {
+	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	font-size: 16px;
+	line-height: 1.4;
+	-webkit-font-smoothing: antialiased;
+	overscroll-behavior-y: none;
+}
+
+body {
+	min-height: 100dvh;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+/* Minimum comfortable hit area for anything interactive. */
+button,
+a,
+[role='button'] {
+	min-height: var(--tap);
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+}

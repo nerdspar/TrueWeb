@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+		/>
+		<!-- Single dark theme (§8): no switcher, so the chrome is pinned dark. -->
+		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#07080B" />
+		<title>TrueWeb</title>
+
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<!-- black-translucent lets content scroll under the status bar; app.css
+		     holds content clear of that band via the safe-area insets. -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="TrueWeb" />
+
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="tap">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

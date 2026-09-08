@@ -147,6 +147,11 @@ export class TrueNasClient {
 		return this.me;
 	}
 
+	/** True once connected, authenticated, and subscriptions are restored. */
+	get connected(): boolean {
+		return this.ready;
+	}
+
 	/** Connect, authenticate, and resubscribe. Resolves with auth.me on ready. */
 	connect(): Promise<AuthMe> {
 		this.shouldRun = true;

@@ -1,0 +1,11 @@
+{
+	// Type-checks the node-side code that lives outside SvelteKit's src include:
+	// the M1 CLI harness and the offline tests. The client itself (src/lib) is
+	// covered here too so `check:node` alone validates the whole client layer.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"types": ["node"]
+	},
+	"include": ["scripts/**/*.ts", "test/**/*.ts", "src/lib/server/truenas/**/*.ts"]
+}
