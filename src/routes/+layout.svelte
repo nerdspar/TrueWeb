@@ -29,17 +29,26 @@
 		};
 	});
 
-	// All four tabs ship as of M5. Apps sits last despite being the app's reason
-	// for existing and still owning `/` — that's the requested order.
+	// All four tabs ship as of M5. The dashboard is the default: it owns `/`, so
+	// it's also where the installed PWA launches (manifest start_url).
 	const tabs = [
-		{ href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+		{ href: '/', label: 'Dashboard', icon: 'dashboard' },
 		{ href: '/storage', label: 'Storage', icon: 'storage' },
 		{ href: '/datasets', label: 'Datasets', icon: 'datasets' },
-		{ href: '/', label: 'Apps', icon: 'apps' }
+		{ href: '/apps', label: 'Apps', icon: 'apps' }
 	] as const;
 
-	const isActive = (href: string) =>
-		href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
+	/**
+	 * `/` is the dashboard, so it must match exactly — every path starts with it.
+	 * /updates belongs to the Apps tab: it's the bulk-update screen reached from
+	 * the apps list, and leaving no tab lit there looks like a dead end.
+	 */
+	const isActive = (href: string) => {
+		const path = page.url.pathname;
+		if (href === '/') return path === '/';
+		if (href === '/apps') return path.startsWith('/apps') || path.startsWith('/updates');
+		return path.startsWith(href);
+	};
 </script>
 
 <div class="app">

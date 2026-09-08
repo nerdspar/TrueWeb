@@ -268,7 +268,7 @@
 	<div class="empty">
 		<div class="icon">🔍</div>
 		<h2>App not found</h2>
-		<p><a href="/">Back to apps</a></p>
+		<p><a href="/apps">Back to apps</a></p>
 	</div>
 {:else if !data.isCustom}
 	<section class="card">

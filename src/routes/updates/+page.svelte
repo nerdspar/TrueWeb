@@ -153,7 +153,7 @@
 </script>
 
 <header class="head">
-	<a class="back" href="/" aria-label="Back to apps">←</a>
+	<a class="back" href="/apps" aria-label="Back to apps">←</a>
 	<div class="title">
 		<h1>Updates</h1>
 		<div class="sub">
@@ -182,7 +182,7 @@
 		<div class="icon">✓</div>
 		<h2>Everything is up to date</h2>
 		<p class="dim">No apps have updates waiting.</p>
-		<p><a href="/">Back to apps</a></p>
+		<p><a href="/apps">Back to apps</a></p>
 	</div>
 {:else}
 	<ul class="list">

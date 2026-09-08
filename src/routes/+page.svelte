@@ -1,635 +1,698 @@
 <script lang="ts">
+	/**
+	 * Dashboard (§5.4) — read-only, glanceable, answering one question: is this
+	 * box healthy right now?
+	 *
+	 * Everything live comes from a single reporting.realtime subscription, opted
+	 * into with ?realtime=1 so no other tab pays for the firehose.
+	 */
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
-	import type { AppRecord, AppState } from '$lib/server/truenas/methods';
-	import StateBadge from '$lib/components/StateBadge.svelte';
-	import Skeleton from '$lib/components/Skeleton.svelte';
-	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
-	import OptionSheet from '$lib/components/OptionSheet.svelte';
+	import Icon from '$lib/components/Icon.svelte';
+	import Meter from '$lib/components/Meter.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import { formatAgo, formatBytes, formatPercent, formatRate, formatUptime } from '$lib/client/actions';
+	import { alertIso, alertMessage, alertTone, sortAlerts } from '$lib/dashboard/alerts';
+	import { anyErrors, diskCount, poolErrors, totalErrors } from '$lib/storage/topology';
 	import {
-		postAction,
-		confirmMessage,
-		resolveUpdateAction,
-		VERB,
-		GERUND,
-		NEEDS_CONFIRM,
-		type Action
-	} from '$lib/client/actions';
+		aggregateCpu,
+		memoryUsed,
+		peakCpuTemp,
+		poolHealth,
+		poolUsedPercent,
+		POOL_WARN_PERCENT,
+		type RealtimeUpdate
+	} from '$lib/dashboard/types';
 
 	let { data }: { data: PageData } = $props();
 
-	type Filter = 'all' | 'running' | 'stopped' | 'updates';
-	type Sort = 'state' | 'name' | 'recent';
-
-	// Live list: the SSR snapshot (data.apps) with SSE deltas layered on top —
-	// `overrides` patches known apps, `extras` holds ones that appeared live,
-	// `removed` hides ones that went away. Deriving (rather than seeding a single
-	// $state from a prop) means a reload can't clobber live state and the first
-	// paint already has the server's list.
-	let overrides = $state<Record<string, Partial<AppRecord>>>({});
-	let extras = $state<AppRecord[]>([]);
-	let removed = $state<string[]>([]);
-	let filter = $state<Filter>('all');
-	// Name is the default: a stable alphabetical list means a row doesn't jump
-	// when its state changes under you (§5.1 offers state/name/recent).
-	let sort = $state<Sort>('name');
-	let sortOpen = $state(false);
-	let filterOpen = $state(false);
+	let live = $state<RealtimeUpdate | null>(null);
+	/**
+	 * Dismissals are tracked locally and subtracted from the loaded list, rather
+	 * than copying `data.alerts` into state — a copy would silently ignore a
+	 * reload of the page data.
+	 */
+	let dismissedIds = $state<string[]>([]);
+	let dismissing = $state<Record<string, boolean>>({});
+	const alerts = $derived(
+		sortAlerts(data.alerts.filter((a) => !dismissedIds.includes(a.uuid)))
+	);
+	/** Seeded from the load on mount; the job stream owns it after that. */
+	let jobs = $state<typeof data.jobs>([]);
 	let toastMsg = $state('');
 
-	// When we last saw each app change state (from the live stream), for the
-	// "recently changed" sort. Populated by SSE, so it reflects this session.
-	let changedAt = $state<Record<string, number>>({});
-
-	// Rows with an action in flight: appId → the action + its job.
-	let pending = $state<Record<string, { action: Action; pct?: number }>>({});
-	const jobToApp = new Map<number, string>();
-	const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-	// Confirm sheet (§6 tier-2).
-	let confirmOpen = $state(false);
-	let confirmProps = $state({ title: '', message: '', confirmLabel: 'Confirm', danger: false });
-	let confirmRun: (() => void) | null = null;
-
-	const hasUpdate = (a: AppRecord) => Boolean(a.upgrade_available || a.image_updates_available);
-	const isRunning = (s: string) => s === 'RUNNING';
-	const isTransitional = (s: string) => s === 'DEPLOYING' || s === 'STOPPING';
-
-	const STATE_ORDER: Record<string, number> = {
-		CRASHED: 0,
-		STOPPED: 1,
-		STOPPING: 2,
-		DEPLOYING: 3,
-		RUNNING: 4
-	};
-
-	const apps = $derived.by(() => {
-		const rm = new Set(removed);
-		const baseIds = new Set(data.apps.map((a) => a.id));
-		const merged: AppRecord[] = [];
-		for (const a of data.apps) {
-			if (!rm.has(a.id)) merged.push({ ...a, ...overrides[a.id] });
-		}
-		for (const a of extras) {
-			if (!baseIds.has(a.id) && !rm.has(a.id)) merged.push({ ...a, ...overrides[a.id] });
-		}
-		return merged;
-	});
-
-	const pendingUpdates = $derived(apps.filter(hasUpdate).length);
-
-	const filtered = $derived.by(() => {
-		let list = [...apps];
-		if (filter === 'running') list = list.filter((a) => a.state === 'RUNNING');
-		else if (filter === 'stopped')
-			list = list.filter((a) => a.state === 'STOPPED' || a.state === 'CRASHED');
-		else if (filter === 'updates') list = list.filter(hasUpdate);
-
-		list.sort((a, b) => {
-			if (sort === 'name') return a.name.localeCompare(b.name);
-			if (sort === 'recent')
-				return (changedAt[b.id] ?? 0) - (changedAt[a.id] ?? 0) || a.name.localeCompare(b.name);
-			return (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || a.name.localeCompare(b.name);
-		});
-		return list;
-	});
+	const newVersion = $derived(data.update?.status?.new_version ?? null);
 
 	/**
-	 * Two controls, not five. The filter chips and the sort button competed for
-	 * the same strip, so the row scrolled sideways on a phone and the sort
-	 * looked like a fifth filter. Each is now one button showing its current
-	 * value, opening the same bottom sheet the rest of the app uses.
-	 *
-	 * Counts live in the sheet: they're worth having, and worth nothing if they
-	 * cost you the ability to read the labels.
+	 * Alerts, the update notice and running jobs are header icons rather than
+	 * three stacked cards: they're usually empty or a single line, and as cards
+	 * they pushed the things you actually came to look at — pools and live load
+	 * — below the fold. The badge carries the state; the panel opens on demand,
+	 * one at a time.
 	 */
-	const FILTER_OPTS = $derived([
-		{ key: 'all', label: 'All apps', hint: `${apps.length}` },
-		{
-			key: 'running',
-			label: 'Running',
-			hint: `${apps.filter((a) => a.state === 'RUNNING').length}`
-		},
-		{
-			key: 'stopped',
-			label: 'Stopped',
-			hint: `${apps.filter((a) => a.state === 'STOPPED' || a.state === 'CRASHED').length}`
-		},
-		{ key: 'updates', label: 'Updates available', hint: `${pendingUpdates}` }
-	]);
-	const filterLabel = $derived(
-		FILTER_OPTS.find((o) => o.key === filter)?.label ?? 'All apps'
+	let panel = $state<'alerts' | 'update' | 'jobs' | null>(null);
+	const togglePanel = (which: 'alerts' | 'update' | 'jobs') =>
+		(panel = panel === which ? null : which);
+
+	/** The badge takes the worst severity present, so it can't under-report. */
+	const alertTone_ = $derived.by(() => {
+		const tones = alerts.map((a) => alertTone(a.level));
+		if (tones.includes('danger')) return 'danger';
+		if (tones.includes('warn')) return 'warn';
+		return 'info';
+	});
+	/** Pool health by name, to merge over the live capacity figures. */
+	const healthByName = $derived(new Map(data.pools.map((p) => [p.name, p])));
+
+	async function dismiss(uuid: string) {
+		dismissing = { ...dismissing, [uuid]: true };
+		try {
+			const res = await fetch('/api/alerts/dismiss', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ uuid })
+			});
+			if (!res.ok) {
+				const body = (await res.json().catch(() => ({}))) as { message?: string };
+				throw new Error(body.message ?? 'The alert could not be dismissed.');
+			}
+			dismissedIds = [...dismissedIds, uuid];
+		} catch (err) {
+			toastMsg = (err as Error).message ?? 'Could not dismiss the alert.';
+		} finally {
+			const { [uuid]: _gone, ...rest } = dismissing;
+			dismissing = rest;
+		}
+	}
+	/** Set once the first sample lands, to tell "connecting" from "idle". */
+	let seenSample = $state(false);
+
+	const cpu = $derived(aggregateCpu(live?.cpu));
+	const cpuTemp = $derived(peakCpuTemp(live?.cpu));
+	const coreCount = $derived(Object.keys(live?.cpu ?? {}).filter((k) => /^cpu\d+$/.test(k)).length);
+	const memTotal = $derived(live?.memory?.physical_memory_total ?? null);
+	const memUsed = $derived(memoryUsed(live?.memory));
+	const memPercent = $derived(
+		memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null
 	);
 
-	const SORT_OPTS = [
-		{ key: 'state', label: 'State', hint: 'Stopped & erroring first' },
-		{ key: 'name', label: 'Name', hint: 'A–Z' },
-		{ key: 'recent', label: 'Recently changed', hint: 'Most recent first' }
-	];
-	const sortLabel = $derived(SORT_OPTS.find((o) => o.key === sort)?.label ?? 'Name');
+	/** Pools sorted fullest-first, because that's the one you care about. */
+	const pools = $derived(
+		Object.entries(live?.pools ?? {})
+			.map(([name, p]) => {
+				const percent = poolUsedPercent(p);
+				const entry = healthByName.get(name);
+				return {
+					name,
+					...p,
+					percent,
+					health: poolHealth(percent),
+					// boot-pool shows up in the realtime feed but not in pool.query
+					// (§5.5 reads it via boot.get_state), so health can be absent.
+					status: entry?.status ?? null,
+					// Health has no realtime equivalent, so it comes from pool.query —
+					// and is shown always, not only once something is wrong.
+					errors: poolErrors(entry?.topology),
+					disks: diskCount(entry?.topology),
+					degraded: entry ? !entry.healthy : false,
+					warning: entry?.warning ?? false,
+					fragmentation: entry?.fragmentation ?? null,
+					scan: entry?.scan ?? null
+				};
+			})
+			.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1))
+	);
 
-	const dockerHealthy = $derived(data.docker?.status === 'RUNNING');
-
-	// ── live updates ─────────────────────────────────────────────────────────
-
-	function onAppEvent(msg: string, id: string, fields: Partial<AppRecord> | undefined) {
-		if (!id) return;
-		if (msg === 'removed') {
-			if (!removed.includes(id)) removed = [...removed, id];
-			clearPending(id);
-			return;
-		}
-		if (removed.includes(id)) removed = removed.filter((r) => r !== id);
-
-		const known = data.apps.some((a) => a.id === id) || extras.some((a) => a.id === id);
-		if (known) {
-			overrides = { ...overrides, [id]: { ...overrides[id], ...fields } };
-		} else {
-			extras = [
-				...extras,
-				{
-					id,
-					name: (fields?.name as string) ?? id,
-					state: (fields?.state as AppState) ?? 'STOPPED',
-					...fields
-				}
-			];
-		}
-		changedAt = { ...changedAt, [id]: Date.now() };
-	}
-
-	function onJobEvent(job: { id?: number; state?: string; method?: string; progress?: { percent?: number } }) {
-		if (typeof job.id !== 'number') return;
-		const appId = jobToApp.get(job.id);
-		if (!appId || !pending[appId]) return;
-
-		if (typeof job.progress?.percent === 'number') {
-			pending[appId] = { ...pending[appId], pct: job.progress.percent };
-		}
-		if (job.state === 'FAILED' || job.state === 'ABORTED') {
-			toastMsg = `${VERB[pending[appId].action]} failed for ${appId}.`;
-			clearPending(appId, job.id);
-		} else if (job.state === 'SUCCESS') {
-			// State is (or will be) corrected by the app.query stream.
-			clearPending(appId, job.id);
-		}
-	}
-
-	function clearPending(appId: string, jobId?: number) {
-		if (jobId !== undefined) jobToApp.delete(jobId);
-		const timer = pendingTimers.get(appId);
-		if (timer) {
-			clearTimeout(timer);
-			pendingTimers.delete(appId);
-		}
-		const next = { ...pending };
-		delete next[appId];
-		pending = next;
-	}
+	/** Only interfaces that are actually up — a NAS has plenty that aren't. */
+	const nics = $derived(
+		Object.entries(live?.interfaces ?? {})
+			.filter(([, n]) => n.link_state === 'LINK_STATE_UP')
+			.sort(([a], [b]) => a.localeCompare(b))
+	);
 
 	onMount(() => {
-		// Restore the saved sort (§8: sort order may live in localStorage).
-		try {
-			const saved = localStorage.getItem('trueweb.sort');
-			if (saved === 'state' || saved === 'name' || saved === 'recent') sort = saved;
-		} catch {
-			/* private mode / blocked storage — fall back to the default */
-		}
-
+		jobs = data.jobs;
 		if (!data.configured) return;
-		const es = new EventSource('/api/stream');
-		es.addEventListener('app', (e) => {
-			const { msg, id, fields } = JSON.parse((e as MessageEvent).data);
-			onAppEvent(msg, String(id ?? fields?.id ?? ''), fields);
+		const es = new EventSource('/api/stream?realtime=1');
+		es.addEventListener('realtime', (e) => {
+			live = JSON.parse((e as MessageEvent).data) as RealtimeUpdate;
+			seenSample = true;
 		});
-		es.addEventListener('job', (e) => onJobEvent(JSON.parse((e as MessageEvent).data)));
+		es.addEventListener('job', (e) => {
+			const job = JSON.parse((e as MessageEvent).data) as {
+				id?: number;
+				method?: string;
+				state?: string;
+				progress?: { percent?: number; description?: string | null };
+			};
+			if (typeof job.id !== 'number') return;
+			const finished = job.state !== 'RUNNING' && job.state !== 'WAITING';
+			if (finished) {
+				jobs = jobs.filter((j) => j.id !== job.id);
+				return;
+			}
+			const next = {
+				id: job.id,
+				method: job.method ?? '',
+				state: job.state ?? 'RUNNING',
+				description: job.progress?.description ?? null,
+				progress: job.progress ?? null
+			};
+			jobs = jobs.some((j) => j.id === job.id)
+				? jobs.map((j) => (j.id === job.id ? next : j))
+				: [...jobs, next];
+		});
 		return () => es.close();
 	});
-
-	// Persist the sort choice whenever it changes.
-	$effect(() => {
-		try {
-			localStorage.setItem('trueweb.sort', sort);
-		} catch {
-			/* ignore */
-		}
-	});
-
-	// ── actions ────────────────────────────────────────────────────────────
-
-	function requestAction(app: AppRecord, action: Action) {
-		if (!NEEDS_CONFIRM[action]) {
-			runAction(app, action); // start / restart are tier 1 — one tap
-			return;
-		}
-		askConfirm(
-			{
-				title: `${VERB[action]} ${app.name}?`,
-				message: confirmMessage(action),
-				confirmLabel: VERB[action],
-				danger: action === 'stop'
-			},
-			() => runAction(app, action)
-		);
-	}
-
-	async function runAction(app: AppRecord, action: Action) {
-		pending = { ...pending, [app.id]: { action } };
-		// Safety: never leave a row stuck pending if no job event arrives.
-		pendingTimers.set(
-			app.id,
-			setTimeout(() => clearPending(app.id), 5 * 60_000)
-		);
-
-		try {
-			const jobId = await postAction(app.name, action);
-			if (typeof jobId === 'number') jobToApp.set(jobId, app.id);
-		} catch (err) {
-			toastMsg = `${VERB[action]} failed for ${app.name}: ${(err as Error).message}`;
-			clearPending(app.id);
-		}
-	}
-
-	function askConfirm(props: Partial<typeof confirmProps>, run: () => void) {
-		confirmProps = { title: 'Are you sure?', message: '', confirmLabel: 'Confirm', danger: false, ...props };
-		confirmRun = run;
-		confirmOpen = true;
-	}
 </script>
 
-<header class="head">
-	<div class="titlerow">
-		<h1>Apps</h1>
-		<div class="headactions">
-			{#if data.reachable && pendingUpdates > 0}
-				<a class="updates" href="/updates" title="Review and update these apps">
-					{pendingUpdates} update{pendingUpdates === 1 ? '' : 's'}
-				</a>
-			{/if}
-			<!-- Persistent entry to the compose paste flow (§5.2). -->
-			<a class="add" href="/apps/new" aria-label="Add an app" title="Add an app">+</a>
-		</div>
-	</div>
+<svelte:head><title>Dashboard · TrueWeb</title></svelte:head>
 
-	{#if data.reachable && data.docker && !dockerHealthy}
-		<div class="banner warn" role="status">
-			<strong>Apps service: {data.docker.status}</strong>
-			<span>{data.docker.description || 'The Apps (Docker) service is not running.'}</span>
+<header class="head">
+	<h1>Dashboard</h1>
+	{#if data.reachable}
+		<div class="status">
+			<button
+				class="glyph"
+				class:on={panel === 'alerts'}
+				aria-expanded={panel === 'alerts'}
+				aria-label={`Alerts: ${alerts.length}`}
+				onclick={() => togglePanel('alerts')}
+			>
+				<Icon name="bell" size={20} />
+				{#if alerts.length > 0}<span class="badge {alertTone_}">{alerts.length}</span>{/if}
+			</button>
+			<button
+				class="glyph"
+				class:on={panel === 'update'}
+				aria-expanded={panel === 'update'}
+				aria-label={newVersion ? `Update available: ${newVersion.version}` : 'No update available'}
+				onclick={() => togglePanel('update')}
+			>
+				<Icon name="update" size={20} />
+				{#if newVersion}<span class="badge info">1</span>{/if}
+			</button>
+			<button
+				class="glyph"
+				class:on={panel === 'jobs'}
+				aria-expanded={panel === 'jobs'}
+				aria-label={`Running jobs: ${jobs.length}`}
+				onclick={() => togglePanel('jobs')}
+			>
+				<Icon name="activity" size={20} />
+				{#if jobs.length > 0}<span class="badge accent">{jobs.length}</span>{/if}
+			</button>
 		</div>
 	{/if}
 </header>
 
 {#if !data.reachable}
-	<div class="state">
-		<div class="state-icon">⚠</div>
+	<div class="empty">
+		<div class="icon">⚠</div>
 		<h2>{data.configured ? "Can't reach TrueNAS" : 'Not configured'}</h2>
-		<p>{data.reason}</p>
-		{#if data.configured}
-			<p class="dim">The connection retries automatically — this page will fill in once it's back.</p>
-		{/if}
+		<p class="dim">{data.reason}</p>
 	</div>
 {:else}
-	<div class="controls">
-		<button class="control" aria-haspopup="dialog" onclick={() => (filterOpen = true)}>
-			<span class="ck">Filter</span>
-			<span class="cv">{filterLabel}</span>
-		</button>
-		<button class="control" aria-haspopup="dialog" onclick={() => (sortOpen = true)}>
-			<span class="ck">Sort</span>
-			<span class="cv">{sortLabel}</span>
-		</button>
-	</div>
-
-	{#if apps.length === 0}
-		<Skeleton rows={4} />
-		<p class="dim center">No apps installed.</p>
-	{:else if filtered.length === 0}
-		<p class="dim center">No apps match this filter.</p>
-	{:else}
-		<ul class="list">
-			{#each filtered as app (app.id)}
-				{@const p = pending[app.id]}
-				{@const busy = Boolean(p) || isTransitional(app.state)}
-				<li class="row">
-					<div class="top">
-						<a class="peek" href={`/apps/${encodeURIComponent(app.name)}`}>
-							<div class="avatar" aria-hidden="true">{app.name.charAt(0).toUpperCase()}</div>
-							<div class="meta">
-								<div class="name">
-									{app.name}
-									{#if hasUpdate(app)}<span class="pill" title="Update available">⬆ update</span>{/if}
-									{#if app.custom_app}<span class="pill ghost" title="Custom (compose) app">custom</span>{/if}
-								</div>
-								{#if app.human_version}<div class="ver">{app.human_version}</div>{/if}
-							</div>
-						</a>
-						{#if p}
-							<span class="pending" role="status">
-								<span class="spin" aria-hidden="true"></span>
-								{GERUND[p.action]}{p.pct ? ` ${p.pct}%` : '…'}
-							</span>
-						{:else}
-							<StateBadge state={app.state} />
-						{/if}
+	{#if panel === 'alerts'}
+		<section class="card">
+			<h2>Alerts</h2>
+			{#if alerts.length === 0}
+				<p class="dim small">No active alerts.</p>
+			{/if}
+			{#each alerts as a (a.uuid)}
+				<div class="alert {alertTone(a.level)}">
+					<div class="atext">
+						<p>{alertMessage(a)}</p>
+						<span class="ameta">{a.level} · {formatAgo(alertIso(a.datetime))}</span>
 					</div>
-
-					<div class="actions">
-						{#if isRunning(app.state)}
-							<button class="act danger" disabled={busy} onclick={() => requestAction(app, 'stop')}>
-								■ Stop
-							</button>
-							<button class="act" disabled={busy} onclick={() => requestAction(app, 'restart')}>
-								↻ Restart
-							</button>
-						{:else}
-							<button
-								class="act go"
-								disabled={busy}
-								onclick={() => requestAction(app, 'start')}
-							>
-								▶ Start
-							</button>
-						{/if}
-						{#if hasUpdate(app)}
-							{@const upd = resolveUpdateAction(app)}
-							{#if upd}
-								<button class="act update" disabled={busy} onclick={() => requestAction(app, upd)}>
-									⬆ Update
-								</button>
-							{/if}
-						{/if}
-					</div>
-				</li>
+					<button
+						class="x"
+						aria-label={`Dismiss: ${alertMessage(a)}`}
+						disabled={dismissing[a.uuid]}
+						onclick={() => dismiss(a.uuid)}
+					>{dismissing[a.uuid] ? '…' : '×'}</button>
+				</div>
 			{/each}
-		</ul>
+		</section>
+	{/if}
+
+	{#if panel === 'update'}
+		<section class="card">
+			<h2>System update</h2>
+			{#if !newVersion}
+				<p class="dim small">
+					Up to date{data.system?.version ? ` — running ${data.system.version}` : ''}.
+				</p>
+			{:else}
+			<p class="upd">
+				<strong>{newVersion.version}</strong> is available{data.system?.version
+					? ` — this box runs ${data.system.version}`
+					: ''}.
+			</p>
+			{#if newVersion.release_notes_url}
+				<a class="notes" href={newVersion.release_notes_url} target="_blank" rel="noreferrer noopener">
+					Release notes ↗
+				</a>
+			{/if}
+			{/if}
+		</section>
+	{/if}
+
+	{#if panel === 'jobs'}
+		<section class="card">
+			<h2>Running now</h2>
+			{#if jobs.length === 0}
+				<p class="dim small">Nothing running.</p>
+			{:else}
+			{#each jobs as j (j.id)}
+				<div class="job">
+					<span class="mono">{j.method}</span>
+					<span class="jstate">
+						{j.state === 'WAITING' ? 'queued' : `${Math.round(j.progress?.percent ?? 0)}%`}
+					</span>
+				</div>
+			{/each}
+			{/if}
+		</section>
+	{/if}
+
+	{#if pools.length > 0}
+		<section class="card">
+			<h2>Pools</h2>
+			{#each pools as p (p.name)}
+				<div class="row">
+					{#if p.degraded || p.warning}
+						<p class="poolbad">
+							<strong>{p.status ?? 'Unhealthy'}</strong>
+							{p.degraded
+								? 'This pool is not healthy — check Storage for the failing member.'
+								: 'This pool is reporting a warning.'}
+						</p>
+					{/if}
+					<Meter
+						label={p.name}
+						detail={p.total ? `${formatBytes(p.used)} of ${formatBytes(p.total)}` : '—'}
+						percent={p.percent}
+						tone={p.health}
+						note={p.health === 'critical'
+							? `${formatPercent(p.percent ?? 0)}% full — ZFS slows down badly this close to full. Free space or add capacity.`
+							: p.health === 'warn'
+								? `Over ${POOL_WARN_PERCENT}% full — write performance starts to suffer here.`
+								: ''}
+					/>
+					{#if p.status}
+						<p class="health" class:bad={p.degraded || anyErrors(p.errors)}>
+							<span class="hstat">{p.status}</span>
+							{#if p.disks}· {p.disks} disks{/if}
+							·
+							{#if anyErrors(p.errors)}
+								{totalErrors(p.errors)} errors ({p.errors.read}R / {p.errors.write}W / {p.errors.checksum}C)
+							{:else}
+								no errors
+							{/if}
+						</p>
+					{/if}
+				</div>
+			{/each}
+		</section>
+	{/if}
+
+	<section class="card">
+		<h2>Live</h2>
+		{#if !seenSample}
+			<p class="dim small">Waiting for the first sample…</p>
+		{:else}
+			<div class="row">
+				<Meter
+					label="CPU"
+					detail={`${formatPercent(cpu ?? undefined)}%${coreCount ? ` · ${coreCount} threads` : ''}${cpuTemp !== null ? ` · ${cpuTemp}°C` : ''}`}
+					percent={cpu}
+					tone="accent"
+				/>
+			</div>
+			<div class="row">
+				<Meter
+					label="Memory"
+					detail={memUsed !== null && memTotal
+						? `${formatBytes(memUsed)} of ${formatBytes(memTotal)}`
+						: '—'}
+					percent={memPercent}
+					tone="accent"
+					note={live?.memory?.arc_size
+						? `Includes ${formatBytes(live.memory.arc_size)} of ZFS cache (ARC), which is reclaimable.`
+						: ''}
+				/>
+			</div>
+
+			<div class="metrics">
+				<div class="metric">
+					<span class="k">Disk read</span>
+					<span class="v">{formatRate(live?.disks?.read_bytes)}</span>
+				</div>
+				<div class="metric">
+					<span class="k">Disk write</span>
+					<span class="v">{formatRate(live?.disks?.write_bytes)}</span>
+				</div>
+				<div class="metric">
+					<span class="k">Disk busy</span>
+					<span class="v">{formatPercent(live?.disks?.busy)}%</span>
+				</div>
+				<div class="metric">
+					<span class="k">ZFS cache</span>
+					<span class="v">{formatBytes(live?.memory?.arc_size)}</span>
+				</div>
+			</div>
+		{/if}
+	</section>
+
+	{#if data.system}
+		<section class="card">
+			<h2>System</h2>
+			<dl class="facts">
+				<div><dt>Host</dt><dd>{data.system.hostname}</dd></div>
+				<div><dt>Version</dt><dd>{data.system.version}</dd></div>
+				<div><dt>Uptime</dt><dd>{formatUptime(data.system.uptime_seconds)}</dd></div>
+				<div>
+					<dt>Load</dt>
+					<dd>{data.system.loadavg.map((n) => n.toFixed(2)).join('  ')}</dd>
+				</div>
+				<div><dt>CPU</dt><dd class="wrap">{data.system.model}</dd></div>
+				<div>
+					<dt>Memory</dt>
+					<dd>{formatBytes(data.system.physmem)}{data.system.ecc_memory ? ' ECC' : ''}</dd>
+				</div>
+			</dl>
+		</section>
+	{/if}
+
+	{#if nics.length > 0}
+		<section class="card">
+			<h2>Network</h2>
+			{#each nics as [name, n] (name)}
+				<div class="nic">
+					<div class="nicname">
+						<span class="mono">{name}</span>
+						{#if n.speed}<span class="speed">{n.speed >= 1000 ? `${n.speed / 1000}G` : `${n.speed}M`}</span>{/if}
+					</div>
+					<div class="rates">
+						<span title="Received">↓ {formatRate(n.received_bytes_rate)}</span>
+						<span title="Sent">↑ {formatRate(n.sent_bytes_rate)}</span>
+					</div>
+				</div>
+			{/each}
+		</section>
 	{/if}
 {/if}
 
-<OptionSheet
-	bind:open={filterOpen}
-	title="Show"
-	current={filter}
-	options={FILTER_OPTS}
-	onselect={(k) => (filter = k as Filter)}
-/>
-<OptionSheet
-	bind:open={sortOpen}
-	title="Sort by"
-	current={sort}
-	options={SORT_OPTS}
-	onselect={(k) => (sort = k as Sort)}
-/>
-<ConfirmSheet
-	bind:open={confirmOpen}
-	title={confirmProps.title}
-	message={confirmProps.message}
-	confirmLabel={confirmProps.confirmLabel}
-	danger={confirmProps.danger}
-	onconfirm={() => confirmRun?.()}
-/>
 <Toast bind:message={toastMsg} />
 
 <style>
-	.head {
-		position: sticky;
-		top: 0;
-		z-index: 10;
-		padding: calc(var(--sa-top) + 12px) 16px 10px;
-		background: color-mix(in srgb, var(--bg) 88%, transparent);
-		backdrop-filter: blur(12px);
-		border-bottom: 1px solid var(--border);
+	.status {
+		display: flex;
+		gap: 4px;
 	}
-	.titlerow {
+	.glyph {
+		position: relative;
+		width: var(--tap);
+		min-height: var(--tap);
+		display: grid;
+		place-items: center;
+		border: 0;
+		border-radius: var(--r-sm);
+		background: transparent;
+		color: var(--text-dim);
+	}
+	.glyph.on {
+		background: var(--surface-2);
+		color: var(--text);
+	}
+	.badge {
+		position: absolute;
+		top: 4px;
+		right: 2px;
+		min-width: 16px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--info);
+		color: #04070f;
+		font-size: 10px;
+		font-weight: 800;
+		line-height: 16px;
+		text-align: center;
+	}
+	.badge.warn {
+		background: var(--warn);
+	}
+	.badge.danger {
+		background: var(--danger);
+		color: #fff;
+	}
+	.badge.accent {
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+	.head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-	}
-	.headactions {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.add {
-		display: grid;
-		place-items: center;
-		width: 40px;
-		height: 40px;
-		min-height: 40px;
-		border-radius: 12px;
-		background: var(--surface-2);
-		border: 1px solid var(--border);
-		color: var(--text);
-		font-size: 24px;
-		font-weight: 600;
-		line-height: 1;
-		text-decoration: none;
+		padding: calc(var(--sa-top) + 14px) 16px 10px;
 	}
 	h1 {
 		margin: 0;
-		font-size: 28px;
-		font-weight: 800;
+		font-size: 26px;
 		letter-spacing: -0.02em;
 	}
-	.updates {
-		display: inline-flex;
-		align-items: center;
-		font-size: 13px;
-		font-weight: 700;
-		color: var(--on-accent);
-		background: var(--accent-grad);
-		padding: 6px 12px;
-		border-radius: 999px;
-		text-decoration: none;
-		min-height: 32px;
+	.card {
+		margin: 12px;
+		padding: 14px 16px;
+		border-radius: var(--r);
+		background: var(--surface);
+		border: 1px solid var(--border);
 	}
-	.banner {
-		margin-top: 10px;
-		padding: 10px 12px;
-		border-radius: var(--r-sm);
+	h2 {
+		margin: 0 0 12px;
+		font-size: 13px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-dim);
+	}
+	.row + .row {
+		margin-top: 14px;
+	}
+	.metrics {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 10px;
+		margin-top: 16px;
+	}
+	.metric {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		font-size: 13px;
-	}
-	.banner.warn {
-		background: color-mix(in srgb, var(--warn) 12%, transparent);
-		border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
-		color: var(--text);
-	}
-
-	.controls {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
-		padding: 10px 16px 2px;
-	}
-	.control {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 1px;
-		min-height: var(--tap);
-		padding: 6px 12px;
+		padding: 10px 12px;
 		border-radius: var(--r-sm);
-		border: 1px solid var(--border);
 		background: var(--surface-2);
-		text-align: left;
-		min-width: 0;
 	}
-	.ck {
-		font-size: 10px;
+	.k {
+		font-size: 11px;
 		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.05em;
 		color: var(--text-faint);
 	}
-	.cv {
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--text);
-		max-width: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.v {
+		font-size: 16px;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
 	}
-
-	.list {
-		list-style: none;
+	.alert {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 10px 12px;
+		border-radius: var(--r-sm);
+		border-left: 3px solid var(--info);
+		background: var(--surface-2);
+	}
+	.alert + .alert {
+		margin-top: 8px;
+	}
+	.alert.warn {
+		border-left-color: var(--warn);
+	}
+	.alert.danger {
+		border-left-color: var(--danger);
+	}
+	.atext {
+		flex: 1;
+		min-width: 0;
+	}
+	.atext p {
 		margin: 0;
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+	.ameta {
+		display: block;
+		margin-top: 3px;
+		font-size: 11px;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.x {
+		flex: none;
+		width: 32px;
+		min-height: 32px;
+		border: 0;
+		background: transparent;
+		color: var(--text-dim);
+		font-size: 20px;
+		line-height: 1;
 		padding: 0;
 	}
-	.row {
-		padding: 12px 16px;
-		border-bottom: 1px solid var(--border);
+	.upd {
+		margin: 0 0 8px;
+		font-size: 14px;
 	}
-	.top {
+	.notes {
+		display: inline-block;
+		margin-top: 4px;
+		font-size: 13px;
+		color: var(--accent);
+	}
+	.job {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 12px;
+		padding: 8px 0;
 	}
-	/* Tapping the icon/name drills into the detail view; the badge and the
-	   action buttons stay outside the link so one-tap actions still work. */
-	.peek {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		color: inherit;
-		text-decoration: none;
+	.job + .job {
+		border-top: 1px solid var(--border);
 	}
-	.avatar {
-		width: 40px;
-		height: 40px;
-		border-radius: 10px;
+	.jstate {
 		flex: none;
-		display: grid;
-		place-items: center;
+		font-size: 12px;
+		color: var(--text-dim);
+		font-variant-numeric: tabular-nums;
+	}
+	.health {
+		margin: 6px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.health .hstat {
+		color: var(--ok);
 		font-weight: 700;
-		color: var(--on-accent);
-		background: var(--accent-grad);
 	}
-	.meta {
-		flex: 1;
-		min-width: 0;
+	.health.bad,
+	.health.bad .hstat {
+		color: var(--danger);
 	}
-	.name {
-		font-weight: 600;
+	.poolbad {
+		margin: 0 0 8px;
+		padding: 8px 10px;
+		border-radius: var(--r-sm);
+		background: color-mix(in srgb, var(--danger) 12%, transparent);
+		border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+		font-size: 12px;
+		color: var(--text-dim);
+	}
+	.poolbad strong {
+		color: var(--danger);
+		display: block;
+	}
+	.facts {
+		margin: 0;
+		display: grid;
+		gap: 10px;
+	}
+	.facts > div {
 		display: flex;
-		align-items: center;
-		gap: 6px;
-		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
 	}
-	.ver {
+	dt {
 		font-size: 12px;
 		color: var(--text-faint);
-		margin-top: 2px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
-	.pill {
-		font-size: 10px;
-		font-weight: 700;
-		padding: 2px 6px;
-		border-radius: 5px;
-		color: var(--on-accent);
-		background: var(--accent-grad);
-	}
-	.pill.ghost {
-		color: var(--text-dim);
-		background: var(--surface-3);
-	}
-	.pending {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--info);
-		white-space: nowrap;
-	}
-	.spin {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		border: 2px solid color-mix(in srgb, var(--info) 30%, transparent);
-		border-top-color: var(--info);
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	.actions {
-		display: flex;
-		gap: 8px;
-		margin-top: 10px;
-		flex-wrap: wrap;
-	}
-	.act {
-		flex: 1;
-		min-width: 96px;
-		min-height: 44px;
-		border-radius: var(--r-sm);
-		border: 1px solid var(--border);
-		background: var(--surface-2);
-		color: var(--text);
+	dd {
+		margin: 0;
 		font-size: 14px;
 		font-weight: 600;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
 	}
-	.act:disabled {
-		opacity: 0.45;
-	}
-	.act.go {
-		border-color: transparent;
-		color: var(--on-accent);
-		background: var(--accent-grad);
-	}
-	.act.danger {
-		color: var(--danger);
-		border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-	}
-	.act.update {
-		color: var(--accent);
-		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+	dd.wrap {
+		font-weight: 500;
+		font-size: 13px;
+		overflow-wrap: anywhere;
 	}
 
-	.state {
+	.nic {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 10px 0;
+	}
+	.nic + .nic {
+		border-top: 1px solid var(--border);
+	}
+	.nicname {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+	.mono {
+		font-family: var(--mono);
+		font-size: 13px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.speed {
+		flex: none;
+		padding: 1px 6px;
+		border-radius: 999px;
+		background: var(--surface-3);
+		color: var(--text-dim);
+		font-size: 11px;
+		font-weight: 700;
+	}
+	.rates {
+		display: flex;
+		gap: 12px;
+		flex: none;
+		font-size: 13px;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-dim);
+	}
+	.empty {
+		margin: 40px 24px;
 		text-align: center;
-		padding: 64px 24px;
 	}
-	.state-icon {
-		font-size: 36px;
+	.icon {
+		font-size: 34px;
+		margin-bottom: 8px;
 	}
-	.state h2 {
-		margin: 12px 0 6px;
+	.empty h2 {
+		margin: 0 0 6px;
+		font-size: 18px;
+		text-transform: none;
+		letter-spacing: normal;
+		color: var(--text);
 	}
 	.dim {
 		color: var(--text-dim);
 	}
-	.center {
-		text-align: center;
-		padding: 24px;
+	.small {
+		font-size: 12px;
 	}
 </style>

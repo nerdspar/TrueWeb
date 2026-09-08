@@ -215,7 +215,7 @@
 			const body = await res.json();
 			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 			// The app record goes away with it, so there's nothing to come back to.
-			void goto('/');
+			void goto('/apps');
 		} catch (err) {
 			deleting = false;
 			failure = { error: (err as Error).message, exception: '' };
@@ -276,7 +276,7 @@
 </script>
 
 <header class="head">
-	<a class="back" href="/" aria-label="Back to apps">←</a>
+	<a class="back" href="/apps" aria-label="Back to apps">←</a>
 	<div class="title">
 		<h1>{data.name}</h1>
 		{#if app}
@@ -302,7 +302,7 @@
 		<div class="icon">🔍</div>
 		<h2>App not found</h2>
 		<p class="dim">No app named <code>{data.name}</code> is installed.</p>
-		<p><a href="/">Back to apps</a></p>
+		<p><a href="/apps">Back to apps</a></p>
 	</div>
 {:else}
 	<div class="actions">

@@ -381,7 +381,7 @@
 </script>
 
 <header class="head">
-	<a class="back" href="/" aria-label="Back to apps">←</a>
+	<a class="back" href="/apps" aria-label="Back to apps">←</a>
 	<div class="title">
 		<h1>New app</h1>
 		<div class="sub">Paste a docker-compose file</div>
