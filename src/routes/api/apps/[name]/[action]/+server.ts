@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getClient, serviceStatus } from '$lib/server/service';
+import { middlewareFailed } from '$lib/server/mwerror';
 
 /**
  * App lifecycle actions (§5.1 row actions). Each maps to a verified job method;
@@ -60,6 +61,6 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		void done.catch(() => {});
 		return json({ ok: true, jobId: id, method });
 	} catch (err) {
-		error(502, (err as Error).message ?? 'Action failed.');
+		middlewareFailed(err, `${action} failed`);
 	}
 };

@@ -28,8 +28,16 @@ export interface PathReport {
 	note?: string;
 }
 
+/** A conflicting host port and a free one to offer instead. */
+export interface PortSuggestion {
+	port: number;
+	suggested: number;
+}
+
 export interface PreflightResult {
 	nameTaken: boolean;
 	portConflicts: number[];
+	/** One free alternative per conflict, so the fix is one tap (§5.2). */
+	portSuggestions: PortSuggestion[];
 	paths: PathReport[];
 }

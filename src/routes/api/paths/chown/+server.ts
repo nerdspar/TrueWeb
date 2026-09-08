@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getClient, serviceStatus } from '$lib/server/service';
 import { chownPath } from '$lib/server/truenas/methods';
+import { middlewareFailed } from '$lib/server/mwerror';
 
 /**
  * Set ownership on a provisioned path (§5.2). A dataset created with default
@@ -34,7 +35,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	const recursive = body.recursive !== false;
 
 	const client = getClient();
-	const { id, done } = await chownPath(client, path, uid, gid, recursive);
-	void done.catch(() => {});
-	return json({ ok: true, jobId: id });
+	try {
+		const { id, done } = await chownPath(client, path, uid, gid, recursive);
+		void done.catch(() => {});
+		return json({ ok: true, jobId: id });
+	} catch (err) {
+		middlewareFailed(err, `Could not set ownership on ${path}`);
+	}
 };

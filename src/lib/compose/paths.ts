@@ -66,42 +66,33 @@ export function missingSegments(path: string, ancestor: string): string[] {
 }
 
 /**
- * The dataset parents recognised when none are configured: a parent dataset
- * literally named `Data`, under any pool. This is the "known config parent" of
- * §5.2 — new app datasets belong directly under it and nowhere else.
+ * Whether a dataset can be created at a path, given what exists above it.
+ *
+ * Datasets and directories are both allowed anywhere in the hierarchy, so this
+ * encodes only what ZFS actually requires: a dataset's parent must itself be a
+ * dataset, and it has to exist already. That means exactly one missing segment,
+ * directly under a mountpoint — with two levels missing, the immediate parent
+ * isn't there yet, so the deeper one can't be created in a single call (create
+ * the intermediate one first, then the child).
  */
-const DEFAULT_PARENT_BASENAMES = ['Data'];
-
-const trimSlash = (p: string) => p.replace(/\/+$/, '');
-
-/**
- * Whether a missing path's parent is somewhere a *dataset* may be created.
- * `configured` (TRUEWEB_DATASET_PARENTS) takes precedence when set, so the
- * layout of a given box is configuration rather than a code change.
- */
-export function isDatasetParent(ancestor: string, configured: string[] = []): boolean {
-	if (configured.length > 0) {
-		return configured.map(trimSlash).includes(trimSlash(ancestor));
-	}
-	const base = trimSlash(ancestor).split('/').pop() ?? '';
-	return DEFAULT_PARENT_BASENAMES.includes(base);
+export function canCreateDatasetAt(opts: {
+	existingAncestor: string | null;
+	missingCount: number;
+	ancestorIsMountpoint: boolean;
+}): boolean {
+	return Boolean(opts.existingAncestor) && opts.missingCount === 1 && opts.ancestorIsMountpoint;
 }
 
 /**
- * §5.2: "Default to dataset for a direct child of a known config parent,
- * directory otherwise." Only a single missing segment directly under a
- * recognised parent dataset becomes a dataset; anything deeper, anywhere else,
- * or under a plain directory becomes a directory. Creating datasets several
- * levels down is not what someone pasting a compose file means, and it makes a
- * mess of the dataset tree.
+ * What to create by default. A dataset when one is possible — a per-app dataset
+ * is the more useful default on TrueNAS (own snapshots, own quota) — and a
+ * directory otherwise. Both remain offered wherever both are legal; this is
+ * only the pre-selected choice.
  */
 export function recommendKind(opts: {
 	existingAncestor: string | null;
 	missingCount: number;
 	ancestorIsMountpoint: boolean;
-	datasetParents?: string[];
 }): ProvisionKind {
-	const { existingAncestor, missingCount, ancestorIsMountpoint, datasetParents = [] } = opts;
-	if (missingCount !== 1 || !ancestorIsMountpoint || !existingAncestor) return 'directory';
-	return isDatasetParent(existingAncestor, datasetParents) ? 'dataset' : 'directory';
+	return canCreateDatasetAt(opts) ? 'dataset' : 'directory';
 }

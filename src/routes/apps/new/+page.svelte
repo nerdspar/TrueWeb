@@ -12,6 +12,8 @@
 		validateAppName
 	} from '$lib/compose/inspect';
 	import { repoNameFromUrl, suggestAppName } from '$lib/compose/github';
+	import { replaceVolumeSource, replaceHostPort } from '$lib/compose/edit';
+	import PathPicker from '$lib/components/PathPicker.svelte';
 	import type { PathReport, PreflightResult } from '$lib/compose/types';
 
 	let { data }: { data: PageData } = $props();
@@ -40,6 +42,13 @@
 	let uid = $state(String(DEFAULT_UID));
 	let gid = $state(String(DEFAULT_GID));
 
+	/** Path picker: which bind mount we're re-pointing, if any. */
+	let pickerOpen = $state(false);
+	let pickerFor = $state<string>('');
+	let pickerStart = $state('/mnt');
+	/** Working values for the port-conflict fixers. */
+	let portEdits = $state<Record<number, string>>({});
+
 	let deploying = $state(false);
 	let deployPct = $state<number | undefined>(undefined);
 	let deployNote = $state('');
@@ -67,23 +76,20 @@
 		if (!inspection.ok) out.push(inspection.error?.message ?? 'The compose file is not valid.');
 		if (pre && pre.portConflicts.length > 0) {
 			out.push(
-				`Port ${pre.portConflicts.join(', ')} ${pre.portConflicts.length === 1 ? 'is' : 'are'} already in use — change ${pre.portConflicts.length === 1 ? 'it' : 'them'} in the YAML.`
+				`Port ${pre.portConflicts.join(', ')} ${pre.portConflicts.length === 1 ? 'is' : 'are'} already in use.`
 			);
 		}
 		if (unresolved.length > 0) {
 			out.push(`Fill in ${unresolved.map((p) => p.name).join(', ')}.`);
 		}
-		for (const s of inspection.suspectPaths) {
-			out.push(
-				s.why === 'relative'
-					? `“${s.source}” is a relative path — there's no project folder on TrueNAS for it to sit in. Change it to a path under /mnt.`
-					: `“${s.source}” is outside /mnt, so it would land on the boot pool. Change it to a path under /mnt.`
-			);
-		}
+		// Suspect bind mounts get their own section with a picker, rather than
+		// being prose telling you to go and edit YAML by hand.
 		return out;
 	});
 
-	const canDeploy = $derived(Boolean(pre) && blockers.length === 0 && !deploying);
+	const canDeploy = $derived(
+		Boolean(pre) && blockers.length === 0 && inspection.suspectPaths.length === 0 && !deploying
+	);
 
 	// ── draft persistence (§5.2) ───────────────────────────────────────────
 	let draftTimer: ReturnType<typeof setTimeout> | undefined;
@@ -209,6 +215,11 @@
 			const nextKinds: typeof kinds = {};
 			for (const p of pre.paths) if (!p.exists) nextKinds[p.path] = p.recommended;
 			kinds = nextKinds;
+			// Seed the port fields from the suggestions, so "Change" works without
+			// having to type over the value first.
+			const nextPorts: Record<number, string> = {};
+			for (const s of pre.portSuggestions ?? []) nextPorts[s.port] = String(s.suggested);
+			portEdits = nextPorts;
 		} catch (err) {
 			toastMsg = `Check failed: ${(err as Error).message}`;
 		} finally {
@@ -251,6 +262,47 @@
 		} finally {
 			working = { ...working, [path]: false };
 		}
+	}
+
+	/** Re-point a bind mount by browsing for a location instead of hand-editing. */
+	function openPicker(source: string) {
+		pickerFor = source;
+		// Start somewhere useful: the path's own parent if it's under /mnt.
+		pickerStart = source.startsWith('/mnt/')
+			? source.slice(0, source.lastIndexOf('/')) || '/mnt'
+			: '/mnt';
+		pickerOpen = true;
+	}
+
+	function applyPickedPath(chosen: string) {
+		const { text, replaced } = replaceVolumeSource(compose, pickerFor, chosen);
+		if (replaced === 0) {
+			toastMsg = `Couldn't find “${pickerFor}” in the YAML to update.`;
+			return;
+		}
+		compose = text;
+		// The paths in the previous check no longer describe this file.
+		pre = null;
+		toastMsg = `Pointed at ${chosen}.`;
+		pickerFor = '';
+	}
+
+	function applyPortChange(oldPort: number) {
+		const suggested = pre?.portSuggestions.find((s) => s.port === oldPort)?.suggested;
+		const raw = portEdits[oldPort] ?? (suggested !== undefined ? String(suggested) : '');
+		const next = Number(raw);
+		if (!Number.isInteger(next) || next < 1 || next > 65535) {
+			toastMsg = 'Enter a port between 1 and 65535.';
+			return;
+		}
+		const { text, replaced } = replaceHostPort(compose, oldPort, next);
+		if (replaced === 0) {
+			toastMsg = `Couldn't rewrite port ${oldPort} automatically — edit it in the YAML.`;
+			return;
+		}
+		compose = text;
+		pre = null;
+		toastMsg = `Port ${oldPort} → ${next}. Check again.`;
 	}
 
 	async function deploy() {
@@ -407,7 +459,26 @@
 			</p>
 		{:else}
 			{#if pre.portConflicts.length > 0}
-				<p class="err">Ports already in use: {pre.portConflicts.join(', ')}</p>
+				<div class="fixlist">
+					<p class="err">
+						{pre.portConflicts.length === 1 ? 'This port is' : 'These ports are'} already in use.
+						Change {pre.portConflicts.length === 1 ? 'it' : 'them'} here and the YAML is updated.
+					</p>
+					{#each pre.portSuggestions as s (s.port)}
+						<div class="fixrow">
+							<code>{s.port}</code>
+							<span class="arrow" aria-hidden="true">→</span>
+							<input
+								class="text port"
+								value={portEdits[s.port] ?? String(s.suggested)}
+								oninput={(e) => (portEdits = { ...portEdits, [s.port]: e.currentTarget.value })}
+								inputmode="numeric"
+								aria-label={`New host port for ${s.port}`}
+							/>
+							<button class="tiny go" onclick={() => applyPortChange(s.port)}>Change</button>
+						</div>
+					{/each}
+				</div>
 			{:else if inspection.hostPorts.length > 0}
 				<p class="ok small">Ports free: {inspection.hostPorts.join(', ')}</p>
 			{/if}
@@ -436,9 +507,12 @@
 									{p.type?.toLowerCase()}{p.isMountpoint ? ' · dataset' : ''} · owner
 									{p.uid}:{p.gid}{p.owner ? ` (${p.owner})` : ''}
 								</div>
-								<button class="tiny" disabled={busy} onclick={() => applyChown(p.path)}>
-									Set owner to {uid}:{gid}
-								</button>
+								<div class="pathactions">
+									<button class="tiny" disabled={busy} onclick={() => applyChown(p.path)}>
+										Set owner to {uid}:{gid}
+									</button>
+									<button class="tiny" onclick={() => openPicker(p.path)}>Change…</button>
+								</div>
 							{:else if done}
 								<div class="pathmeta">Created as {done}.</div>
 								<button class="tiny" disabled={busy} onclick={() => applyChown(p.path)}>
@@ -469,9 +543,14 @@
 											Directory
 										</label>
 									</div>
-									<button class="tiny go" disabled={busy} onclick={() => provision(p)}>
-										{busy ? 'Creating…' : 'Create'}
-									</button>
+									<div class="pathactions">
+										<button class="tiny go" disabled={busy} onclick={() => provision(p)}>
+											{busy ? 'Creating…' : 'Create'}
+										</button>
+										<button class="tiny" onclick={() => openPicker(p.path)}>Choose…</button>
+									</div>
+								{:else}
+									<button class="tiny" onclick={() => openPicker(p.path)}>Choose a location…</button>
 								{/if}
 							{/if}
 						</li>
@@ -493,6 +572,23 @@
 			{/if}
 		{/if}
 	</section>
+
+	{#if inspection.suspectPaths.length > 0}
+		<section class="card blockers">
+			<h2>These mounts need a real location</h2>
+			{#each inspection.suspectPaths as s (s.source)}
+				<div class="fixpath">
+					<code>{s.source}</code>
+					<p class="small">
+						{s.why === 'relative'
+							? 'Relative to nothing — a custom app has no project folder to sit in.'
+							: 'Outside /mnt, so it would land on the boot pool.'}
+					</p>
+					<button class="tiny go" onclick={() => openPicker(s.source)}>Choose a location…</button>
+				</div>
+			{/each}
+		</section>
+	{/if}
 
 	{#if blockers.length > 0}
 		<section class="card blockers">
@@ -526,6 +622,12 @@
 	</div>
 {/if}
 
+<PathPicker
+	bind:open={pickerOpen}
+	start={pickerStart}
+	title={pickerFor ? `Location for ${pickerFor}` : 'Choose a location'}
+	onpick={applyPickedPath}
+/>
 <Toast bind:message={toastMsg} />
 
 <style>
@@ -705,6 +807,47 @@
 		font-family: var(--font);
 		font-size: 10px;
 		color: var(--text-faint);
+	}
+
+	/* Inline fixers: change a clashing port, or re-point a bad mount. */
+	.fixlist {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.fixrow {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.fixrow code {
+		flex: none;
+		color: var(--danger);
+	}
+	.arrow {
+		color: var(--text-faint);
+	}
+	.text.port {
+		width: 96px;
+		text-align: center;
+		font-family: var(--mono);
+		min-height: 40px;
+	}
+	.fixpath {
+		padding: 8px 0;
+		border-top: 1px solid var(--border);
+	}
+	.fixpath:first-of-type {
+		border-top: 0;
+	}
+	.fixpath p {
+		margin: 4px 0 0;
+		color: var(--text-dim);
+	}
+	.pathactions {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
 	}
 
 	.paths {

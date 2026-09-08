@@ -220,13 +220,47 @@ export async function statPath(client: TrueNasClient, path: string): Promise<Sta
 	}
 }
 
+/** One entry from filesystem.listdir. Verified: api_methods_filesystem.listdir.html. */
+export interface DirEntry {
+	name: string;
+	path: string;
+	type: 'DIRECTORY' | 'FILE' | 'SYMLINK' | 'OTHER';
+	is_mountpoint: boolean;
+	uid: number;
+	gid: number;
+}
+
 /**
- * pool.dataset.create — verified: [{name, type}] where name is the ZFS path
- * including the pool and no /mnt prefix. Not a job. Every property is left to
- * INHERIT from the parent (§5.2: this is provisioning, not a dataset editor).
+ * filesystem.listdir — verified: [path, filters, options], not a job. One
+ * method covers the whole browse tree: /mnt lists the pools, a pool lists its
+ * datasets and directories, and is_mountpoint says which is which.
+ *
+ * Filtered to directories and trimmed with `select`, because an unconstrained
+ * listing returns a very large object graph (§3.6).
+ */
+export function listDir(client: TrueNasClient, path: string): Promise<DirEntry[]> {
+	return client.call<DirEntry[]>('filesystem.listdir', [
+		path,
+		[['type', '=', 'DIRECTORY']],
+		{ select: ['name', 'path', 'type', 'is_mountpoint', 'uid', 'gid'], order_by: ['name'] }
+	]);
+}
+
+/**
+ * pool.dataset.create — verified: [{name, …}] where name is the ZFS path
+ * including the pool and no /mnt prefix. Not a job. Every property except one
+ * is left to INHERIT from the parent (§5.2: this is provisioning, not a dataset
+ * editor).
+ *
+ * aclmode DISCARD is the exception, and it is required rather than a
+ * preference: with a parent whose acltype is POSIX or OFF — which is how this
+ * box's app datasets are set up — the middleware rejects the create outright
+ * with `pool_dataset_create.aclmode: Must be set to DISCARD when acltype is
+ * POSIX or OFF`. It also happens to be exactly what §5.2 asks for: no ACLs on
+ * datasets created this way, since host-path binds here are used without them.
  */
 export function createDataset(client: TrueNasClient, datasetName: string): Promise<unknown> {
-	return client.call('pool.dataset.create', [{ name: datasetName, type: 'FILESYSTEM' }]);
+	return client.call('pool.dataset.create', [{ name: datasetName, aclmode: 'DISCARD' }]);
 }
 
 /** filesystem.mkdir — verified: [{path, mode}]. Not a job. */

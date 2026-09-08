@@ -110,6 +110,7 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 	'pool.dataset.get_quota': { tier: 'read' },
 	'pool.snapshot.query': { tier: 'read' },
 	'filesystem.stat': { tier: 'read', verified: true },
+	'filesystem.listdir': { tier: 'read', verified: true },
 
 	// ── datasets / filesystem: tier 2 ────────────────────────────────────────
 	// Verified against v25.10: dataset creation and mkdir return synchronously —

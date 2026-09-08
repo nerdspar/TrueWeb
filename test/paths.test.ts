@@ -6,7 +6,7 @@ import {
 	ancestorsOf,
 	missingSegments,
 	recommendKind,
-	isDatasetParent
+	canCreateDatasetAt
 } from '../src/lib/compose/paths.ts';
 
 test('converts a /mnt path to the ZFS dataset name pool.dataset.create wants', () => {
@@ -43,99 +43,30 @@ test('missing segments are those below the existing ancestor', () => {
 	assert.deepEqual(missingSegments('/mnt/NAS/Data/foo', '/mnt/OTHER'), []);
 });
 
-test('a direct child of a Data dataset is the one case that becomes a dataset', () => {
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Data',
-			missingCount: 1,
-			ancestorIsMountpoint: true
-		}),
-		'dataset'
-	);
-	// Pool-agnostic: it's the parent named Data that matters, not the pool.
-	assert.equal(
-		recommendKind({ existingAncestor: '/mnt/tank/Data', missingCount: 1, ancestorIsMountpoint: true }),
-		'dataset'
-	);
+test('a dataset is offered anywhere its parent is a dataset', () => {
+	for (const ancestor of ['/mnt/NAS/Data', '/mnt/NAS/Media', '/mnt/NAS', '/mnt/NAS/Data/jellyfin']) {
+		const shape = { existingAncestor: ancestor, missingCount: 1, ancestorIsMountpoint: true };
+		assert.equal(canCreateDatasetAt(shape), true, ancestor);
+		assert.equal(recommendKind(shape), 'dataset', ancestor);
+	}
 });
 
-test('anything below Data becomes a directory, not a nested dataset', () => {
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Data',
-			missingCount: 2,
-			ancestorIsMountpoint: true
-		}),
-		'directory'
-	);
-	// A child of an app's own dataset is a directory, however deep.
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Data/jellyfin',
-			missingCount: 1,
-			ancestorIsMountpoint: true
-		}),
-		'directory'
-	);
+test('a dataset needs its immediate parent to exist, so two missing levels fall back', () => {
+	// ZFS can't create pool/a/b when pool/a isn't there yet — make the
+	// intermediate one first, then the child.
+	const shape = { existingAncestor: '/mnt/NAS/Data', missingCount: 2, ancestorIsMountpoint: true };
+	assert.equal(canCreateDatasetAt(shape), false);
+	assert.equal(recommendKind(shape), 'directory');
 });
 
-test('datasets are not offered outside Data, even under another dataset', () => {
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Media',
-			missingCount: 1,
-			ancestorIsMountpoint: true
-		}),
-		'directory'
-	);
-	assert.equal(
-		recommendKind({ existingAncestor: '/mnt/NAS', missingCount: 1, ancestorIsMountpoint: true }),
-		'directory'
-	);
+test('a plain directory parent cannot hold a dataset', () => {
+	const shape = { existingAncestor: '/mnt/NAS/Data/foo', missingCount: 1, ancestorIsMountpoint: false };
+	assert.equal(canCreateDatasetAt(shape), false);
+	assert.equal(recommendKind(shape), 'directory');
 });
 
-test('a plain directory parent never yields a dataset', () => {
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Data',
-			missingCount: 1,
-			ancestorIsMountpoint: false
-		}),
-		'directory'
-	);
-	assert.equal(
-		recommendKind({ existingAncestor: null, missingCount: 1, ancestorIsMountpoint: true }),
-		'directory'
-	);
-});
-
-test('configured dataset parents override the Data default', () => {
-	const configured = ['/mnt/tank/apps'];
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/tank/apps',
-			missingCount: 1,
-			ancestorIsMountpoint: true,
-			datasetParents: configured
-		}),
-		'dataset'
-	);
-	// With an explicit list, Data is no longer special.
-	assert.equal(
-		recommendKind({
-			existingAncestor: '/mnt/NAS/Data',
-			missingCount: 1,
-			ancestorIsMountpoint: true,
-			datasetParents: configured
-		}),
-		'directory'
-	);
-});
-
-test('isDatasetParent matches on the parent name, ignoring trailing slashes', () => {
-	assert.equal(isDatasetParent('/mnt/NAS/Data'), true);
-	assert.equal(isDatasetParent('/mnt/NAS/Data/'), true);
-	assert.equal(isDatasetParent('/mnt/NAS/data'), false, 'case matters on ZFS');
-	assert.equal(isDatasetParent('/mnt/NAS/Media'), false);
-	assert.equal(isDatasetParent('/mnt/NAS/Data', ['/mnt/other']), false);
+test('with no existing ancestor nothing can be created as a dataset', () => {
+	const shape = { existingAncestor: null, missingCount: 1, ancestorIsMountpoint: true };
+	assert.equal(canCreateDatasetAt(shape), false);
+	assert.equal(recommendKind(shape), 'directory');
 });

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getClient, serviceStatus } from '$lib/server/service';
 import { createCustomApp } from '$lib/server/truenas/methods';
 import { validateAppName, inspectCompose } from '$lib/compose/inspect';
+import { middlewareFailed } from '$lib/server/mwerror';
 
 /**
  * Deploy a pasted compose file as a custom app (§5.2 / §3.5): app.create with
@@ -30,7 +31,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!inspection.ok) error(400, inspection.error?.message ?? 'The compose file is not valid.');
 
 	const client = getClient();
-	const { id, done } = await createCustomApp(client, name, compose);
-	void done.catch(() => {});
-	return json({ ok: true, jobId: id, name });
+	try {
+		const { id, done } = await createCustomApp(client, name, compose);
+		void done.catch(() => {});
+		return json({ ok: true, jobId: id, name });
+	} catch (err) {
+		middlewareFailed(err, `Could not create ${name}`);
+	}
 };

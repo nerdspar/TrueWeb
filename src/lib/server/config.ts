@@ -13,13 +13,3 @@ export const SESSION_SECRET = () => env.TRUEWEB_SESSION_SECRET ?? '';
 /** Whether the passcode gate is active. */
 export const gateEnabled = () => Boolean(PASSCODE_HASH());
 
-/**
- * Absolute paths under which the compose flow may create a dataset for a
- * missing host path (§5.2). Empty falls back to a parent dataset named "Data"
- * under any pool — see $lib/compose/paths.ts.
- */
-export const DATASET_PARENTS = (): string[] =>
-	(env.TRUEWEB_DATASET_PARENTS ?? '')
-		.split(',')
-		.map((p) => p.trim())
-		.filter(Boolean);
