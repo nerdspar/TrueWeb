@@ -1,7 +1,9 @@
 <script lang="ts">
 	// A bottom sheet that picks one option from a list — used for the list sort
-	// (§5.1) and the rollback version picker. Lower-half reach (§8).
-	type Option = { key: string; label: string; hint?: string };
+	// (§5.1), the rollback version picker, and an app's overflow menu. Lower-half
+	// reach (§8). With no `current` nothing is ticked, which is what a menu of
+	// actions wants; `danger` marks one that destroys something.
+	type Option = { key: string; label: string; hint?: string; danger?: boolean };
 
 	let {
 		open = $bindable(false),
@@ -38,7 +40,12 @@
 		<ul>
 			{#each options as o (o.key)}
 				<li>
-					<button class="opt" class:on={current === o.key} onclick={() => pick(o.key)}>
+					<button
+						class="opt"
+						class:on={current === o.key}
+						class:danger={o.danger}
+						onclick={() => pick(o.key)}
+					>
 						<span class="labels">
 							<span class="label">{o.label}</span>
 							{#if o.hint}<span class="hint">{o.hint}</span>{/if}
@@ -108,6 +115,9 @@
 	}
 	.opt.on {
 		background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+	}
+	.opt.danger .label {
+		color: var(--danger);
 	}
 	.labels {
 		display: flex;

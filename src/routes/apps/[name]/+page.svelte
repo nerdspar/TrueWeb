@@ -49,6 +49,7 @@
 	let loadingVersions = $state(false);
 	let rollbackOpen = $state(false);
 	let deleteOpen = $state(false);
+	let menuOpen = $state(false);
 	let deleting = $state(false);
 
 	const app = $derived(data.app);
@@ -242,6 +243,23 @@
 		}
 	}
 
+	/**
+	 * Edit and Delete live behind the … rather than on the action row: they are
+	 * the two things you rarely want and never want by accident, and Delete sat
+	 * one mis-tap from Stop.
+	 */
+	const menuOptions = $derived([
+		app?.custom_app
+			? { key: 'edit', label: 'Edit YAML', hint: 'Change the compose file and redeploy' }
+			: { key: 'edit', label: 'View config', hint: 'Read-only — this is a catalog app' },
+		{ key: 'delete', label: 'Delete app', hint: 'Choose what to remove', danger: true }
+	]);
+
+	function chooseMenu(key: string) {
+		if (key === 'edit') void goto(`/apps/${encodeURIComponent(data.name)}/edit`);
+		else if (key === 'delete') deleteOpen = true;
+	}
+
 	async function runAction(action: Action, payload?: Record<string, unknown>) {
 		if (!app) return;
 		pendingAction = action;
@@ -306,16 +324,14 @@
 				{loadingVersions ? '… Rollback' : '⟲ Rollback'}
 			</button>
 		{/if}
-	</div>
-
-	<div class="secondary">
-		{#if app.custom_app}
-			<a class="act" href={`/apps/${encodeURIComponent(data.name)}/edit`}>✎ Edit YAML</a>
-		{:else}
-			<a class="act" href={`/apps/${encodeURIComponent(data.name)}/edit`}>⚙ View config</a>
-		{/if}
-		<button class="act danger" disabled={deleting} onclick={() => (deleteOpen = true)}>
-			{deleting ? 'Deleting…' : '🗑 Delete'}
+		<button
+			class="act more"
+			disabled={deleting}
+			aria-label="More actions"
+			aria-haspopup="dialog"
+			onclick={() => (menuOpen = true)}
+		>
+			{deleting ? 'Deleting…' : '···'}
 		</button>
 	</div>
 
@@ -443,6 +459,7 @@
 	options={(versionInfo?.rollback ?? []).map((v) => ({ key: v, label: v }))}
 	onselect={chooseRollback}
 />
+<OptionSheet bind:open={menuOpen} title={data.name} options={menuOptions} onselect={chooseMenu} />
 <ConfirmSheet
 	bind:open={confirmOpen}
 	title={confirmProps.title}
@@ -530,18 +547,12 @@
 		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 	}
 
-	.secondary {
-		display: flex;
-		gap: 8px;
-		padding: 8px 16px 0;
-		flex-wrap: wrap;
-	}
-	.secondary .act {
-		flex: 1;
-		min-width: 120px;
-		display: grid;
-		place-items: center;
-		text-decoration: none;
+	.act.more {
+		flex: 0 0 auto;
+		min-width: 52px;
+		padding: 0 14px;
+		letter-spacing: 0.12em;
+		color: var(--text-dim);
 	}
 
 	.card {
