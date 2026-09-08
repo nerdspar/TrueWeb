@@ -14,12 +14,19 @@
 		value = $bindable(''),
 		placeholder = '',
 		rows = 16,
-		onpasted
+		onpasted,
+		onchange
 	}: {
 		value?: string;
 		placeholder?: string;
 		rows?: number;
 		onpasted?: () => void;
+		/**
+		 * Called on every edit. Lets a parent hold the text as derived state
+		 * instead of two-way binding — which is what the config editor needs, so
+		 * the loaded config stays the source of truth for the diff.
+		 */
+		onchange?: (value: string) => void;
 	} = $props();
 
 	let el = $state<HTMLTextAreaElement | null>(null);
@@ -30,6 +37,7 @@
 		el.value = el.value.slice(0, start) + insert + el.value.slice(end);
 		el.selectionStart = el.selectionEnd = caret;
 		value = el.value;
+		onchange?.(el.value);
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -72,6 +80,7 @@
 	{rows}
 	{onkeydown}
 	{onpaste}
+	oninput={(e) => onchange?.(e.currentTarget.value)}
 	wrap="off"
 	spellcheck="false"
 	autocapitalize="off"

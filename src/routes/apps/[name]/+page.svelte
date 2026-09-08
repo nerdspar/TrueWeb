@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type { PageData } from './$types';
 	import type { AppStats, LogLine, UpgradeSummary } from '$lib/server/truenas/methods';
 	import StateBadge from '$lib/components/StateBadge.svelte';
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
 	import OptionSheet from '$lib/components/OptionSheet.svelte';
 	import JobFailure from '$lib/components/JobFailure.svelte';
+	import DeleteAppSheet from '$lib/components/DeleteAppSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import {
 		postAction,
@@ -46,6 +48,8 @@
 	let versionInfo = $state<{ summary: UpgradeSummary | null; rollback: string[] } | null>(null);
 	let loadingVersions = $state(false);
 	let rollbackOpen = $state(false);
+	let deleteOpen = $state(false);
+	let deleting = $state(false);
 
 	const app = $derived(data.app);
 	// NB: must not be called `state` — a variable of that name turns every
@@ -197,6 +201,26 @@
 		confirmOpen = true;
 	}
 
+	async function runDelete(opts: { removeImages: boolean; removeData: boolean; force: boolean }) {
+		if (!app) return;
+		deleting = true;
+		failure = null;
+		try {
+			const res = await fetch(`/api/apps/${encodeURIComponent(app.name)}/delete`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ confirm: app.name, ...opts })
+			});
+			const body = await res.json();
+			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
+			// The app record goes away with it, so there's nothing to come back to.
+			void goto('/');
+		} catch (err) {
+			deleting = false;
+			failure = { error: (err as Error).message, exception: '' };
+		}
+	}
+
 	function requestAction(action: Action) {
 		if (!app) return;
 		// A catalog upgrade shows its summary first (§5.1).
@@ -282,6 +306,17 @@
 				{loadingVersions ? '… Rollback' : '⟲ Rollback'}
 			</button>
 		{/if}
+	</div>
+
+	<div class="secondary">
+		{#if app.custom_app}
+			<a class="act" href={`/apps/${encodeURIComponent(data.name)}/edit`}>✎ Edit YAML</a>
+		{:else}
+			<a class="act" href={`/apps/${encodeURIComponent(data.name)}/edit`}>⚙ View config</a>
+		{/if}
+		<button class="act danger" disabled={deleting} onclick={() => (deleteOpen = true)}>
+			{deleting ? 'Deleting…' : '🗑 Delete'}
+		</button>
 	</div>
 
 	{#if failure}
@@ -396,6 +431,12 @@
 	</section>
 {/if}
 
+<DeleteAppSheet
+	bind:open={deleteOpen}
+	name={data.name}
+	isCustom={Boolean(app?.custom_app)}
+	ondelete={runDelete}
+/>
 <OptionSheet
 	bind:open={rollbackOpen}
 	title="Roll back to"
@@ -487,6 +528,20 @@
 	.act.update {
 		color: var(--accent);
 		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+	}
+
+	.secondary {
+		display: flex;
+		gap: 8px;
+		padding: 8px 16px 0;
+		flex-wrap: wrap;
+	}
+	.secondary .act {
+		flex: 1;
+		min-width: 120px;
+		display: grid;
+		place-items: center;
+		text-decoration: none;
 	}
 
 	.card {

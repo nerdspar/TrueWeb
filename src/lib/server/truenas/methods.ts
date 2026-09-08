@@ -322,6 +322,36 @@ export function createCustomApp(client: TrueNasClient, appName: string, composeY
 	]);
 }
 
+export interface DeleteAppOptions {
+	/** Remove the Docker images too. The middleware defaults this to true. */
+	removeImages?: boolean;
+	/** Remove TrueNAS-managed storage (ix-volumes). Destroys app data. */
+	removeData?: boolean;
+	/** Custom apps are refused without this, since they may hold config. */
+	force?: boolean;
+}
+
+/**
+ * app.delete — verified: (app_name, {remove_images, remove_ix_volumes,
+ * force_remove_ix_volumes, force_remove_custom_app}); a job.
+ *
+ * Stored data is left alone unless asked for: remove_ix_volumes defaults false
+ * upstream and stays false here, and forcing it needs the second flag because
+ * the middleware refuses volumes that contain data.
+ */
+export function deleteApp(client: TrueNasClient, name: string, opts: DeleteAppOptions = {}) {
+	const removeData = opts.removeData === true;
+	return client.callJob('app.delete', [
+		name,
+		{
+			remove_images: opts.removeImages !== false,
+			remove_ix_volumes: removeData,
+			force_remove_ix_volumes: removeData,
+			force_remove_custom_app: opts.force === true
+		}
+	]);
+}
+
 /** app.used_ports — verified: no params, every port in use by any app. */
 export function usedPorts(client: TrueNasClient): Promise<number[]> {
 	return client.call<number[]>('app.used_ports', []);

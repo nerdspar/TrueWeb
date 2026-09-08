@@ -140,6 +140,19 @@ reads the clashing port out of the failure and offers to change it.
 middleware requires when the parent's `acltype` is POSIX or OFF. Any other
 refusal is shown verbatim; it's usually a missing role from step 1.
 
+**`EACCES: permission denied … /var/log/app_lifecycle.log`** — the mount is
+there but the file isn't readable by the container's user. On this box it is
+`root:adm` mode `640`, i.e. group-readable only, and the container runs as
+`node`. The compose file joins gid 4 (`adm`) via `group_add`, which grants
+exactly that read. Confirm yours matches:
+
+```bash
+ls -l /var/log/app_lifecycle.log     # expect root adm, -rw-r-----
+```
+
+If the group differs, put its gid in `group_add` instead. Running the container
+as root would also work and is worth avoiding for one log file.
+
 **The container is unhealthy** — the healthcheck only fails if the web server
 is down or the API key is missing/rejected. A briefly unreachable middleware is
 normal and does not flip it: a middleware restart must not make the container

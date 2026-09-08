@@ -75,6 +75,10 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 
 	// ── apps: tier 2.5 (irreversible; type-to-confirm) ───────────────────────
 	'app.convert_to_custom': { tier: 2.5, job: true },
+	// §5.1/§11 originally deferred deletion; added on request. Irreversible, so
+	// it sits in the type-the-name tier alongside convert_to_custom, and the
+	// stored-data option is off unless explicitly asked for.
+	'app.delete': { tier: 2.5, job: true, verified: true },
 
 	// ── docker / apps service (§5.1 health banner) ───────────────────────────
 	'docker.status': { tier: 'read', verified: true },

@@ -65,6 +65,14 @@ services:
       # the LEFT number if 8110 is taken on your NAS.
       - "8110:8110"
 
+    # The lifecycle log is root:adm mode 640 on the host — group-readable only,
+    # and this container runs as `node` (uid 1000), so the mount alone gives
+    # EACCES. Joining gid 4 (adm) grants exactly the read it needs and nothing
+    # else; running the container as root would work too and give away far more.
+    # Check yours if it differs:  ls -l /var/log/app_lifecycle.log
+    group_add:
+      - "4"
+
     volumes:
       # Why this mount exists: when an app fails to come up, TrueNAS records a
       # one-line error pointing at this file and nothing else — the job carries
