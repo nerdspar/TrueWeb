@@ -7,10 +7,17 @@
  * a glance." So the tree is flattened for display and the counts are totalled
  * up to the pool, where a badge can show them without a tap.
  */
-import type { PoolTopology, Vdev, VdevStats } from '$lib/server/storage';
+import type { PoolTopology, Vdev, VdevStats } from "$lib/server/storage";
 
 /** The six topology groups, in the order they're worth reading. */
-export const VDEV_GROUPS = ['data', 'special', 'dedup', 'log', 'cache', 'spare'] as const;
+export const VDEV_GROUPS = [
+  "data",
+  "special",
+  "dedup",
+  "log",
+  "cache",
+  "spare",
+] as const;
 export type VdevGroup = (typeof VDEV_GROUPS)[number];
 
 export type ErrorCounts = { read: number; write: number; checksum: number };
@@ -18,23 +25,27 @@ export type ErrorCounts = { read: number; write: number; checksum: number };
 export const NO_ERRORS: ErrorCounts = { read: 0, write: 0, checksum: 0 };
 
 export function errorsOf(stats: VdevStats | undefined): ErrorCounts {
-	return {
-		read: stats?.read_errors ?? 0,
-		write: stats?.write_errors ?? 0,
-		checksum: stats?.checksum_errors ?? 0
-	};
+  return {
+    read: stats?.read_errors ?? 0,
+    write: stats?.write_errors ?? 0,
+    checksum: stats?.checksum_errors ?? 0,
+  };
 }
 
 export function addErrors(a: ErrorCounts, b: ErrorCounts): ErrorCounts {
-	return { read: a.read + b.read, write: a.write + b.write, checksum: a.checksum + b.checksum };
+  return {
+    read: a.read + b.read,
+    write: a.write + b.write,
+    checksum: a.checksum + b.checksum,
+  };
 }
 
 export function anyErrors(e: ErrorCounts): boolean {
-	return e.read > 0 || e.write > 0 || e.checksum > 0;
+  return e.read > 0 || e.write > 0 || e.checksum > 0;
 }
 
 export function totalErrors(e: ErrorCounts): number {
-	return e.read + e.write + e.checksum;
+  return e.read + e.write + e.checksum;
 }
 
 /**
@@ -45,34 +56,34 @@ export function totalErrors(e: ErrorCounts): number {
  * pool-level badge honest.
  */
 export function subtreeErrors(vdev: Vdev): ErrorCounts {
-	let total = errorsOf(vdev.stats);
-	for (const child of vdev.children ?? []) {
-		total = addErrors(total, subtreeErrors(child));
-	}
-	return total;
+  let total = errorsOf(vdev.stats);
+  for (const child of vdev.children ?? []) {
+    total = addErrors(total, subtreeErrors(child));
+  }
+  return total;
 }
 
 export type FlatVdev = {
-	/** 0 for a top-level vdev, 1 for its members, and so on. */
-	depth: number;
-	group: VdevGroup;
-	/** RAIDZ2 / MIRROR / DISK / … */
-	type: string;
-	status: string;
-	/** What to call this row: the device name if it has one, else the vdev label. */
-	label: string;
-	errors: ErrorCounts;
-	/** Errors including descendants — what a collapsed row should show. */
-	subtree: ErrorCounts;
-	healthy: boolean;
-	guid: string;
+  /** 0 for a top-level vdev, 1 for its members, and so on. */
+  depth: number;
+  group: VdevGroup;
+  /** RAIDZ2 / MIRROR / DISK / … */
+  type: string;
+  status: string;
+  /** What to call this row: the device name if it has one, else the vdev label. */
+  label: string;
+  errors: ErrorCounts;
+  /** Errors including descendants — what a collapsed row should show. */
+  subtree: ErrorCounts;
+  healthy: boolean;
+  guid: string;
 };
 
 /** ZFS member states that mean "this is fine". Anything else is not. */
-const HEALTHY_STATES = new Set(['ONLINE', 'AVAIL', 'INUSE']);
+const HEALTHY_STATES = new Set(["ONLINE", "AVAIL", "INUSE"]);
 
 export function isHealthyState(status: string | undefined): boolean {
-	return HEALTHY_STATES.has((status ?? '').toUpperCase());
+  return HEALTHY_STATES.has((status ?? "").toUpperCase());
 }
 
 /**
@@ -82,47 +93,124 @@ export function isHealthyState(status: string | undefined): boolean {
  * "2db50d31-5374-11eb-…") while `disk` is the useful name ("sdh"), so the label
  * prefers `disk` — a list of GUIDs tells you nothing about which drive to pull.
  */
-export function flattenTopology(topology: PoolTopology | null | undefined): FlatVdev[] {
-	if (!topology) return [];
-	const rows: FlatVdev[] = [];
+export function flattenTopology(
+  topology: PoolTopology | null | undefined,
+): FlatVdev[] {
+  if (!topology) return [];
+  const rows: FlatVdev[] = [];
 
-	const walk = (vdev: Vdev, group: VdevGroup, depth: number) => {
-		rows.push({
-			depth,
-			group,
-			type: vdev.type ?? '',
-			status: vdev.status ?? '',
-			label: vdev.disk || vdev.name || vdev.type || 'unknown',
-			errors: errorsOf(vdev.stats),
-			subtree: subtreeErrors(vdev),
-			healthy: isHealthyState(vdev.status),
-			guid: vdev.guid ?? `${group}-${depth}-${rows.length}`
-		});
-		for (const child of vdev.children ?? []) walk(child, group, depth + 1);
-	};
+  const walk = (vdev: Vdev, group: VdevGroup, depth: number) => {
+    rows.push({
+      depth,
+      group,
+      type: vdev.type ?? "",
+      status: vdev.status ?? "",
+      label: vdev.disk || vdev.name || vdev.type || "unknown",
+      errors: errorsOf(vdev.stats),
+      subtree: subtreeErrors(vdev),
+      healthy: isHealthyState(vdev.status),
+      guid: vdev.guid ?? `${group}-${depth}-${rows.length}`,
+    });
+    for (const child of vdev.children ?? []) walk(child, group, depth + 1);
+  };
 
-	for (const group of VDEV_GROUPS) {
-		for (const vdev of topology[group] ?? []) walk(vdev, group, 0);
-	}
-	return rows;
+  for (const group of VDEV_GROUPS) {
+    for (const vdev of topology[group] ?? []) walk(vdev, group, 0);
+  }
+  return rows;
 }
 
 /** Every error counter in the pool, summed. */
-export function poolErrors(topology: PoolTopology | null | undefined): ErrorCounts {
-	if (!topology) return NO_ERRORS;
-	let total = NO_ERRORS;
-	for (const group of VDEV_GROUPS) {
-		for (const vdev of topology[group] ?? []) total = addErrors(total, subtreeErrors(vdev));
-	}
-	return total;
+export function poolErrors(
+  topology: PoolTopology | null | undefined,
+): ErrorCounts {
+  if (!topology) return NO_ERRORS;
+  let total = NO_ERRORS;
+  for (const group of VDEV_GROUPS) {
+    for (const vdev of topology[group] ?? [])
+      total = addErrors(total, subtreeErrors(vdev));
+  }
+  return total;
 }
 
 /** Members that are not in a healthy state — what to surface first. */
-export function unhealthyMembers(topology: PoolTopology | null | undefined): FlatVdev[] {
-	return flattenTopology(topology).filter((v) => !v.healthy);
+export function unhealthyMembers(
+  topology: PoolTopology | null | undefined,
+): FlatVdev[] {
+  return flattenTopology(topology).filter((v) => !v.healthy);
 }
 
 /** "8 disks" for a pool summary, counting only actual devices. */
 export function diskCount(topology: PoolTopology | null | undefined): number {
-	return flattenTopology(topology).filter((v) => (v.type ?? '').toUpperCase() === 'DISK').length;
+  return flattenTopology(topology).filter(
+    (v) => (v.type ?? "").toUpperCase() === "DISK",
+  ).length;
+}
+
+/**
+ * The pool's layout in one line — "2 × RAIDZ2 | 4 wide", the same summary
+ * TrueNAS's own dashboard leads its pool card with.
+ *
+ * Why it earns a place: layout is what decides how many disks a pool can lose,
+ * and it is invisible everywhere else in this app. A 4-wide RAIDZ2 survives two
+ * failures; a 4-wide RAIDZ1 survives one. Same disk count, same capacity bar,
+ * very different Tuesday.
+ */
+export type VdevLayout = { type: string; count: number; width: number };
+
+/**
+ * Top-level data vdevs grouped by shape. Mirrors and RAIDZ vdevs of different
+ * widths stay separate entries, because a pool built from mismatched vdevs is
+ * exactly the case worth showing rather than averaging away.
+ */
+export function dataLayout(
+  topology: PoolTopology | null | undefined,
+): VdevLayout[] {
+  const byShape = new Map<string, VdevLayout>();
+  for (const vdev of topology?.data ?? []) {
+    const type = (vdev.type ?? "UNKNOWN").toUpperCase();
+    const width = (vdev.children ?? []).length;
+    const key = `${type}/${width}`;
+    const seen = byShape.get(key);
+    if (seen) seen.count += 1;
+    else byShape.set(key, { type, count: 1, width });
+  }
+  return [...byShape.values()];
+}
+
+/** "2 × RAIDZ2 | 4 wide", or "" when the topology isn't loaded. */
+export function formatLayout(layout: VdevLayout[]): string {
+  return layout
+    .map((v) => {
+      const shape = v.count > 1 ? `${v.count} × ${v.type}` : v.type;
+      // A single-disk vdev has no meaningful width, and "1 wide" reads as a
+      // mistake rather than a stripe.
+      return v.width > 1 ? `${shape} | ${v.width} wide` : shape;
+    })
+    .join(" + ");
+}
+
+/** How many vdevs sit in each group — "Data 2 · Cache 0 · Spares 0". */
+export function groupCounts(
+  topology: PoolTopology | null | undefined,
+): Record<VdevGroup, number> {
+  const counts = {} as Record<VdevGroup, number>;
+  for (const group of VDEV_GROUPS)
+    counts[group] = (topology?.[group] ?? []).length;
+  return counts;
+}
+
+/**
+ * Whether a pool's member disks are of differing sizes.
+ *
+ * RAIDZ sizes every vdev by its *smallest* member, so mixing a 6 TB disk into a
+ * vdev of 3 TB disks silently donates half the drive to nothing. Worth stating
+ * plainly; TrueNAS calls this "Mixed Capacity".
+ *
+ * Sizes come from disk.query rather than the topology, whose member entries
+ * report size 0 on this middleware version.
+ */
+export function mixedCapacity(sizes: (number | null)[]): boolean {
+  const real = sizes.filter((n): n is number => typeof n === "number" && n > 0);
+  return new Set(real).size > 1;
 }

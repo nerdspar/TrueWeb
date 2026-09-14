@@ -2,11 +2,11 @@
  * Dashboard reads (§5.4). Every signature here was confirmed against
  * https://api.truenas.com/v25.10/ and none of them is a job.
  */
-import type { TrueNasClient } from './truenas/client.ts';
+import type { TrueNasClient } from "./truenas/client.ts";
 
 // pool.query lives in storage.ts (§5.5) so there is one home for it; the
 // dashboard needs it only to merge health onto the live capacity figures.
-export { listPools, type PoolEntry } from './storage.ts';
+export { listPools, type PoolEntry } from "./storage.ts";
 
 /**
  * system.info — verified: no parameters; not a job.
@@ -17,23 +17,23 @@ export { listPools, type PoolEntry } from './storage.ts';
  * carries loadavg, which §5.4 asks for and sys_info does not have.
  */
 export type SystemInfo = {
-	version: string;
-	hostname: string;
-	physmem: number;
-	model: string;
-	cores: number;
-	physical_cores: number;
-	/** 1 / 5 / 15 minute load averages. */
-	loadavg: number[];
-	uptime: string;
-	uptime_seconds: number;
-	timezone: string;
-	ecc_memory: boolean;
-	system_product: string | null;
+  version: string;
+  hostname: string;
+  physmem: number;
+  model: string;
+  cores: number;
+  physical_cores: number;
+  /** 1 / 5 / 15 minute load averages. */
+  loadavg: number[];
+  uptime: string;
+  uptime_seconds: number;
+  timezone: string;
+  ecc_memory: boolean;
+  system_product: string | null;
 };
 
 export function systemInfo(client: TrueNasClient): Promise<SystemInfo> {
-	return client.call<SystemInfo>('system.info', []);
+  return client.call<SystemInfo>("system.info", []);
 }
 
 /**
@@ -46,26 +46,29 @@ export function systemInfo(client: TrueNasClient): Promise<SystemInfo> {
  * dismiss path sends the one observed to work on a real alert.
  */
 export type Alert = {
-	uuid: string;
-	id: string;
-	klass: string;
-	/** Free string in the docs (INFO / WARNING / ERROR / …), not a closed enum. */
-	level: string;
-	text: string;
-	formatted: string | null;
-	datetime: { $date: number } | string;
-	last_occurrence: { $date: number } | string;
-	dismissed: boolean;
-	one_shot: boolean;
+  uuid: string;
+  id: string;
+  klass: string;
+  /** Free string in the docs (INFO / WARNING / ERROR / …), not a closed enum. */
+  level: string;
+  text: string;
+  formatted: string | null;
+  datetime: { $date: number } | string;
+  last_occurrence: { $date: number } | string;
+  dismissed: boolean;
+  one_shot: boolean;
 };
 
 export function listAlerts(client: TrueNasClient): Promise<Alert[]> {
-	return client.call<Alert[]>('alert.list', []);
+  return client.call<Alert[]>("alert.list", []);
 }
 
 /** alert.dismiss — verified: a single string id; not a job. Returns null. */
-export function dismissAlert(client: TrueNasClient, uuid: string): Promise<null> {
-	return client.call<null>('alert.dismiss', [uuid]);
+export function dismissAlert(
+  client: TrueNasClient,
+  uuid: string,
+): Promise<null> {
+  return client.call<null>("alert.dismiss", [uuid]);
 }
 
 /**
@@ -75,29 +78,82 @@ export function dismissAlert(client: TrueNasClient, uuid: string): Promise<null>
  * sits in the allowlist's DENYLIST so it cannot be reached at all.
  */
 export type UpdateStatus = {
-	code: 'NORMAL' | 'ERROR';
-	status: {
-		current_version: { train: string; profile: string; matches_profile: boolean };
-		new_version: { version: string; release_notes_url: string | null } | null;
-	} | null;
-	error: { errname: string; reason: string } | null;
+  code: "NORMAL" | "ERROR";
+  status: {
+    current_version: {
+      train: string;
+      profile: string;
+      matches_profile: boolean;
+    };
+    new_version: { version: string; release_notes_url: string | null } | null;
+  } | null;
+  error: { errname: string; reason: string } | null;
 };
 
 export function updateStatus(client: TrueNasClient): Promise<UpdateStatus> {
-	return client.call<UpdateStatus>('update.status', []);
+  return client.call<UpdateStatus>("update.status", []);
 }
 
 /** core.get_jobs, narrowed to what's still in flight (§5.4). */
 export type RunningJob = {
-	id: number;
-	method: string;
-	state: string;
-	description: string | null;
-	progress: { percent?: number; description?: string | null } | null;
+  id: number;
+  method: string;
+  state: string;
+  description: string | null;
+  progress: { percent?: number; description?: string | null } | null;
 };
 
 export function runningJobs(client: TrueNasClient): Promise<RunningJob[]> {
-	return client.call<RunningJob[]>('core.get_jobs', [
-		[['state', 'in', ['RUNNING', 'WAITING']]]
-	]);
+  return client.call<RunningJob[]>("core.get_jobs", [
+    [["state", "in", ["RUNNING", "WAITING"]]],
+  ]);
+}
+
+/**
+ * Edition and platform (§5.4 parity with the TrueNAS dashboard).
+ *
+ * system.info carries neither, and the obvious source —
+ * webui.main.dashboard.sys_info — is documented as being for the web UI's
+ * exclusive use, so these three documented methods stand in for it.
+ *
+ * All three verified against the live box: no parameters, none a job.
+ * system.product_type → "COMMUNITY_EDITION"; truenas.is_ix_hardware → false on
+ * self-built hardware; truenas.get_chassis_hardware → "TRUENAS-UNKNOWN" there.
+ */
+export type PlatformInfo = {
+  /** "Community" / "Enterprise" / … — title-cased from the enum. */
+  edition: string;
+  /** The chassis model on iXsystems hardware, "Generic" on anything else. */
+  platform: string;
+};
+
+export async function platformInfo(
+  client: TrueNasClient,
+): Promise<PlatformInfo> {
+  const [productType, isIx, chassis] = await Promise.all([
+    client.call<string>("system.product_type", []),
+    client.call<boolean>("truenas.is_ix_hardware", []),
+    // Only meaningful on iX hardware, where it names the model. Elsewhere it
+    // answers TRUENAS-UNKNOWN, which is not worth showing to anyone.
+    client.call<string>("truenas.get_chassis_hardware", []).catch(() => ""),
+  ]);
+  return {
+    edition: titleCaseEnum(productType),
+    platform:
+      isIx && chassis && chassis !== "TRUENAS-UNKNOWN" ? chassis : "Generic",
+  };
+}
+
+/**
+ * COMMUNITY_EDITION → "Community"; SCALE_ENTERPRISE → "Scale Enterprise".
+ *
+ * The trailing "Edition" is dropped because this renders under a label that
+ * already says Edition, and "Edition: Community Edition" reads like a bug.
+ */
+function titleCaseEnum(value: string): string {
+  return (value ?? "")
+    .split("_")
+    .filter((word) => word && word.toUpperCase() !== "EDITION")
+    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }

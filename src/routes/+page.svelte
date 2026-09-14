@@ -13,13 +13,24 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { formatAgo, formatBytes, formatPercent, formatRate, formatUptime } from '$lib/client/actions';
 	import { alertIso, alertMessage, alertTone, sortAlerts } from '$lib/dashboard/alerts';
-	import { anyErrors, diskCount, poolErrors, totalErrors } from '$lib/storage/topology';
+	import {
+		anyErrors,
+		dataLayout,
+		diskCount,
+		formatLayout,
+		groupCounts,
+		mixedCapacity,
+		poolErrors,
+		totalErrors
+	} from '$lib/storage/topology';
 	import {
 		aggregateCpu,
-		memoryUsed,
-		peakCpuTemp,
+		hottestCpu,
+		memoryBreakdown,
+		peakCpuThread,
 		poolHealth,
 		poolUsedPercent,
+		scanDuration,
 		POOL_WARN_PERCENT,
 		type RealtimeUpdate
 	} from '$lib/dashboard/types';
@@ -88,13 +99,28 @@
 	let seenSample = $state(false);
 
 	const cpu = $derived(aggregateCpu(live?.cpu));
-	const cpuTemp = $derived(peakCpuTemp(live?.cpu));
-	const coreCount = $derived(Object.keys(live?.cpu ?? {}).filter((k) => /^cpu\d+$/.test(k)).length);
-	const memTotal = $derived(live?.memory?.physical_memory_total ?? null);
-	const memUsed = $derived(memoryUsed(live?.memory));
-	const memPercent = $derived(
-		memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null
-	);
+	const hottest = $derived(hottestCpu(live?.cpu));
+	const busiest = $derived(peakCpuThread(live?.cpu));
+	const threadCount = $derived(Object.keys(live?.cpu ?? {}).filter((k) => /^cpu\d+$/.test(k)).length);
+
+	/**
+	 * Memory is metered on *services* — what's actually spoken for — not on
+	 * total-minus-free. ARC is most of the difference and ZFS gives it back on
+	 * demand, so metering it would park this bar above 90% on a healthy box and
+	 * teach you to ignore it.
+	 */
+	const mem = $derived(memoryBreakdown(live?.memory));
+	const memPercent = $derived(mem ? (mem.services / mem.total) * 100 : null);
+
+	/** Member disk sizes per pool, for the mixed-capacity note. */
+	const sizesByPool = $derived.by(() => {
+		const map = new Map<string, (number | null)[]>();
+		for (const d of data.disks) {
+			if (!d.pool) continue;
+			map.set(d.pool, [...(map.get(d.pool) ?? []), d.size]);
+		}
+		return map;
+	});
 
 	/** Pools sorted fullest-first, because that's the one you care about. */
 	const pools = $derived(
@@ -117,7 +143,10 @@
 					degraded: entry ? !entry.healthy : false,
 					warning: entry?.warning ?? false,
 					fragmentation: entry?.fragmentation ?? null,
-					scan: entry?.scan ?? null
+					scan: entry?.scan ?? null,
+					layout: formatLayout(dataLayout(entry?.topology)),
+					groups: groupCounts(entry?.topology),
+					mixed: mixedCapacity(sizesByPool.get(name) ?? [])
 				};
 			})
 			.sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1))
@@ -310,6 +339,31 @@
 							{:else}
 								no errors
 							{/if}
+							{#if p.available}· {formatBytes(p.available)} free{/if}
+						</p>
+					{/if}
+					{#if p.layout}
+						<p class="layout">
+							{p.layout}
+							{#if p.mixed}
+								<span class="mixed" title="Member disks are not all the same size. RAIDZ sizes each vdev by its smallest member, so the extra capacity on the larger disks is unused.">mixed capacity</span>
+							{/if}
+							{#if p.groups.cache || p.groups.spare || p.groups.log}
+								<span class="dim"
+									>· {p.groups.cache} cache · {p.groups.spare} spare{#if p.groups.log}
+										· {p.groups.log} log{/if}</span
+								>
+							{/if}
+						</p>
+					{/if}
+					{#if p.scan && p.scan.state === 'FINISHED' && alertIso(p.scan.end_time)}
+						<p class="scrub">
+							Last {p.scan.function === 'RESILVER' ? 'resilver' : 'scrub'}
+							{formatAgo(alertIso(p.scan.end_time))}
+							{#if scanDuration(p.scan) !== null}· took {formatUptime(scanDuration(p.scan) ?? 0)}{/if}
+							· <span class:bad={(p.scan.errors ?? 0) > 0}
+								>{p.scan.errors ?? 0} error{(p.scan.errors ?? 0) === 1 ? '' : 's'}</span
+							>
 						</p>
 					{/if}
 				</div>
@@ -325,26 +379,59 @@
 			<div class="row">
 				<Meter
 					label="CPU"
-					detail={`${formatPercent(cpu ?? undefined)}%${coreCount ? ` · ${coreCount} threads` : ''}${cpuTemp !== null ? ` · ${cpuTemp}°C` : ''}`}
+					detail={`${formatPercent(cpu ?? undefined)}%${
+						data.system
+							? ` · ${data.system.physical_cores} cores / ${data.system.cores} threads`
+							: threadCount
+								? ` · ${threadCount} threads`
+								: ''
+					}${hottest ? ` · ${hottest.temp}°C` : ''}`}
 					percent={cpu}
 					tone="accent"
+					note={busiest || hottest
+						? [
+								busiest ? `Busiest thread #${busiest.thread} at ${formatPercent(busiest.usage)}%` : '',
+								hottest && hottest.count < hottest.total
+									? `hottest ${hottest.temp}°C on ${hottest.count} of ${hottest.total}`
+									: hottest
+										? `all ${hottest.total} threads at ${hottest.temp}°C`
+										: ''
+							]
+								.filter(Boolean)
+								.join(' · ')
+						: ''}
 				/>
 			</div>
 			<div class="row">
 				<Meter
 					label="Memory"
-					detail={memUsed !== null && memTotal
-						? `${formatBytes(memUsed)} of ${formatBytes(memTotal)}`
-						: '—'}
+					detail={mem ? `${formatBytes(mem.services)} of ${formatBytes(mem.total)}` : '—'}
 					percent={memPercent}
 					tone="accent"
-					note={live?.memory?.arc_size
-						? `Includes ${formatBytes(live.memory.arc_size)} of ZFS cache (ARC), which is reclaimable.`
+					note={mem && mem.cache
+						? `Excludes ${formatBytes(mem.cache)} of ZFS cache (ARC) — ZFS releases it the moment anything else needs it.`
 						: ''}
 				/>
 			</div>
 
-			<div class="metrics">
+			{#if mem}
+				<div class="metrics trio">
+					<div class="metric">
+						<span class="k">Free</span>
+						<span class="v">{formatBytes(mem.free)}</span>
+					</div>
+					<div class="metric">
+						<span class="k">ZFS cache</span>
+						<span class="v">{formatBytes(mem.cache)}</span>
+					</div>
+					<div class="metric">
+						<span class="k">Services</span>
+						<span class="v">{formatBytes(mem.services)}</span>
+					</div>
+				</div>
+			{/if}
+
+			<div class="metrics trio">
 				<div class="metric">
 					<span class="k">Disk read</span>
 					<span class="v">{formatRate(live?.disks?.read_bytes)}</span>
@@ -357,10 +444,6 @@
 					<span class="k">Disk busy</span>
 					<span class="v">{formatPercent(live?.disks?.busy)}%</span>
 				</div>
-				<div class="metric">
-					<span class="k">ZFS cache</span>
-					<span class="v">{formatBytes(live?.memory?.arc_size)}</span>
-				</div>
 			</div>
 		{/if}
 	</section>
@@ -371,6 +454,10 @@
 			<dl class="facts">
 				<div><dt>Host</dt><dd>{data.system.hostname}</dd></div>
 				<div><dt>Version</dt><dd>{data.system.version}</dd></div>
+				{#if data.platform}
+					<div><dt>Edition</dt><dd>{data.platform.edition}</dd></div>
+					<div><dt>Platform</dt><dd>{data.platform.platform}</dd></div>
+				{/if}
 				<div><dt>Uptime</dt><dd>{formatUptime(data.system.uptime_seconds)}</dd></div>
 				<div>
 					<dt>Load</dt>
@@ -486,6 +573,21 @@
 		gap: 10px;
 		margin-top: 16px;
 	}
+	/*
+	 * Both rows below hold three values, so they get three columns rather than a
+	 * 2-up grid with a hole in it. The values are short enough ("3.4 GB") to stay
+	 * legible at a third of a phone's width.
+	 */
+	.metrics.trio {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		margin-top: 12px;
+	}
+	.metrics.trio .metric {
+		padding: 8px 10px;
+	}
+	.metrics.trio .v {
+		font-size: 14px;
+	}
 	.metric {
 		display: flex;
 		flex-direction: column;
@@ -591,6 +693,31 @@
 	.health.bad,
 	.health.bad .hstat {
 		color: var(--danger);
+	}
+	/*
+	 * Layout and scrub sit under the health line as quieter supporting facts:
+	 * you read them when you're asking a question, not every time you glance.
+	 */
+	.layout,
+	.scrub {
+		margin: 3px 0 0;
+		font-size: 11px;
+		color: var(--text-faint);
+	}
+	.layout .dim {
+		color: color-mix(in srgb, var(--text-faint) 70%, transparent);
+	}
+	.mixed {
+		margin-left: 4px;
+		padding: 1px 5px;
+		border-radius: var(--r-sm);
+		background: color-mix(in srgb, var(--warn) 14%, transparent);
+		color: var(--warn);
+		cursor: help;
+	}
+	.scrub .bad {
+		color: var(--danger);
+		font-weight: 700;
 	}
 	.poolbad {
 		margin: 0 0 8px;

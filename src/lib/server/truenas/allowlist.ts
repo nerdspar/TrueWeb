@@ -21,121 +21,127 @@
  */
 
 /** read = non-mutating / infrastructure; 1 / 2 / 2.5 = §6 mutation tiers. */
-export type Tier = 'read' | 1 | 2 | 2.5;
+export type Tier = "read" | 1 | 2 | 2.5;
 
 export interface MethodSpec {
-	tier: Tier;
-	/** The middleware runs this as a job: the call returns a job id, not a result. */
-	job?: boolean;
-	/** Signature confirmed against v25.10 and used in this milestone. */
-	verified?: boolean;
+  tier: Tier;
+  /** The middleware runs this as a job: the call returns a job id, not a result. */
+  job?: boolean;
+  /** Signature confirmed against v25.10 and used in this milestone. */
+  verified?: boolean;
 }
 
 export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
-	// ── auth + connection infrastructure ─────────────────────────────────────
-	'auth.login_ex': { tier: 'read', verified: true },
-	'auth.me': { tier: 'read', verified: true },
+  // ── auth + connection infrastructure ─────────────────────────────────────
+  "auth.login_ex": { tier: "read", verified: true },
+  "auth.me": { tier: "read", verified: true },
 
-	// ── subscription + job infrastructure ────────────────────────────────────
-	'core.ping': { tier: 'read', verified: true },
-	'core.subscribe': { tier: 'read', verified: true },
-	'core.unsubscribe': { tier: 'read', verified: true },
-	'core.get_jobs': { tier: 'read', verified: true },
-	'core.job_wait': { tier: 'read', job: true, verified: true },
-	'core.job_abort': { tier: 'read', verified: true },
+  // ── subscription + job infrastructure ────────────────────────────────────
+  "core.ping": { tier: "read", verified: true },
+  "core.subscribe": { tier: "read", verified: true },
+  "core.unsubscribe": { tier: "read", verified: true },
+  "core.get_jobs": { tier: "read", verified: true },
+  "core.job_wait": { tier: "read", job: true, verified: true },
+  "core.job_abort": { tier: "read", verified: true },
 
-	// ── apps: read (§5.1 / §5.2) ─────────────────────────────────────────────
-	'app.query': { tier: 'read', verified: true },
-	'app.get_instance': { tier: 'read', verified: true },
-	'app.config': { tier: 'read' },
-	'app.container_ids': { tier: 'read', verified: true },
-	'app.used_ports': { tier: 'read', verified: true },
-	'app.used_host_ips': { tier: 'read', verified: true },
-	'app.image.query': { tier: 'read' },
-	'app.outdated_docker_images': { tier: 'read', verified: true },
-	'app.upgrade_summary': { tier: 'read', verified: true },
-	'app.rollback_versions': { tier: 'read', verified: true },
-	// Events (dynamic sources): subscribed as `name:{json}` with params.
-	'app.container_log_follow': { tier: 'read', verified: true },
-	'app.stats': { tier: 'read', verified: true },
-	'app.available': { tier: 'read' },
-	'catalog.get_app_details': { tier: 'read' },
+  // ── apps: read (§5.1 / §5.2) ─────────────────────────────────────────────
+  "app.query": { tier: "read", verified: true },
+  "app.get_instance": { tier: "read", verified: true },
+  "app.config": { tier: "read" },
+  "app.container_ids": { tier: "read", verified: true },
+  "app.used_ports": { tier: "read", verified: true },
+  "app.used_host_ips": { tier: "read", verified: true },
+  "app.image.query": { tier: "read" },
+  "app.outdated_docker_images": { tier: "read", verified: true },
+  "app.upgrade_summary": { tier: "read", verified: true },
+  "app.rollback_versions": { tier: "read", verified: true },
+  // Events (dynamic sources): subscribed as `name:{json}` with params.
+  "app.container_log_follow": { tier: "read", verified: true },
+  "app.stats": { tier: "read", verified: true },
+  "app.available": { tier: "read" },
+  "catalog.get_app_details": { tier: "read" },
 
-	// ── apps: tier 1 (one tap, no confirmation) ──────────────────────────────
-	'app.start': { tier: 1, job: true, verified: true },
-	'app.redeploy': { tier: 1, job: true, verified: true },
+  // ── apps: tier 1 (one tap, no confirmation) ──────────────────────────────
+  "app.start": { tier: 1, job: true, verified: true },
+  "app.redeploy": { tier: 1, job: true, verified: true },
 
-	// ── apps: tier 2 (confirmation naming the target) ────────────────────────
-	'app.stop': { tier: 2, job: true, verified: true },
-	'app.upgrade': { tier: 2, job: true, verified: true },
-	'app.rollback': { tier: 2, job: true, verified: true },
-	'app.create': { tier: 2, job: true, verified: true },
-	'app.update': { tier: 2, job: true },
-	'app.pull_images': { tier: 2, job: true },
+  // ── apps: tier 2 (confirmation naming the target) ────────────────────────
+  "app.stop": { tier: 2, job: true, verified: true },
+  "app.upgrade": { tier: 2, job: true, verified: true },
+  "app.rollback": { tier: 2, job: true, verified: true },
+  "app.create": { tier: 2, job: true, verified: true },
+  "app.update": { tier: 2, job: true },
+  "app.pull_images": { tier: 2, job: true },
 
-	// ── apps: tier 2.5 (irreversible; type-to-confirm) ───────────────────────
-	'app.convert_to_custom': { tier: 2.5, job: true },
-	// §5.1/§11 originally deferred deletion; added on request. Irreversible, so
-	// it sits in the type-the-name tier alongside convert_to_custom, and the
-	// stored-data option is off unless explicitly asked for.
-	'app.delete': { tier: 2.5, job: true, verified: true },
+  // ── apps: tier 2.5 (irreversible; type-to-confirm) ───────────────────────
+  "app.convert_to_custom": { tier: 2.5, job: true },
+  // §5.1/§11 originally deferred deletion; added on request. Irreversible, so
+  // it sits in the type-the-name tier alongside convert_to_custom, and the
+  // stored-data option is off unless explicitly asked for.
+  "app.delete": { tier: 2.5, job: true, verified: true },
 
-	// ── docker / apps service (§5.1 health banner) ───────────────────────────
-	'docker.status': { tier: 'read', verified: true },
-	'docker.state': { tier: 'read', verified: true },
+  // ── docker / apps service (§5.1 health banner) ───────────────────────────
+  "docker.status": { tier: "read", verified: true },
+  "docker.state": { tier: "read", verified: true },
 
-	// ── alerts ───────────────────────────────────────────────────────────────
-	'alert.list': { tier: 'read', verified: true },
-	'alert.dismiss': { tier: 1, verified: true },
+  // ── alerts ───────────────────────────────────────────────────────────────
+  "alert.list": { tier: "read", verified: true },
+  "alert.dismiss": { tier: 1, verified: true },
 
-	// ── dashboard reads (§5.4) ───────────────────────────────────────────────
-	'system.info': { tier: 'read', verified: true },
-	'webui.main.dashboard.sys_info': { tier: 'read' },
-	'update.status': { tier: 'read', verified: true },
+  // ── dashboard reads (§5.4) ───────────────────────────────────────────────
+  "system.info": { tier: "read", verified: true },
+  // Edition and platform, which system.info does not carry. These exist so the
+  // dashboard can state them without webui.main.dashboard.sys_info, which is
+  // documented as for the web UI's exclusive use.
+  "system.product_type": { tier: "read", verified: true },
+  "truenas.is_ix_hardware": { tier: "read", verified: true },
+  "truenas.get_chassis_hardware": { tier: "read", verified: true },
+  "webui.main.dashboard.sys_info": { tier: "read" },
+  "update.status": { tier: "read", verified: true },
 
-	// ── storage / pools reads (§5.5) ─────────────────────────────────────────
-	'pool.query': { tier: 'read', verified: true },
-	'zpool.query': { tier: 'read' },
-	'boot.get_state': { tier: 'read', verified: true },
-	'pool.scrub.query': { tier: 'read' },
-	'pool.get_disks': { tier: 'read' },
-	'disk.query': { tier: 'read', verified: true },
-	'disk.details': { tier: 'read' },
-	'disk.temperatures': { tier: 'read' },
-	'disk.temperature_agg': { tier: 'read' },
-	// Events (§3.4). reporting.realtime is a firehose, so it is subscribed only
-	// while a dashboard is actually open — see api/stream.
-	'reporting.realtime': { tier: 'read', verified: true },
-	'pool.scan': { tier: 'read' },
+  // ── storage / pools reads (§5.5) ─────────────────────────────────────────
+  "pool.query": { tier: "read", verified: true },
+  "zpool.query": { tier: "read" },
+  "boot.get_state": { tier: "read", verified: true },
+  "pool.scrub.query": { tier: "read" },
+  "pool.get_disks": { tier: "read" },
+  "disk.query": { tier: "read", verified: true },
+  "disk.details": { tier: "read" },
+  "disk.temperatures": { tier: "read" },
+  "disk.temperature_agg": { tier: "read" },
+  // Events (§3.4). reporting.realtime is a firehose, so it is subscribed only
+  // while a dashboard is actually open — see api/stream.
+  "reporting.realtime": { tier: "read", verified: true },
+  "pool.scan": { tier: "read" },
 
-	// ── storage: tier 2 ──────────────────────────────────────────────────────
-	// §5.5 names pool.scrub.run, which is deliberately NOT listed: it is not a
-	// job (this map had it wrong) and it silently does nothing unless the last
-	// scrub is older than its 35-day threshold, so a "start scrub" button built
-	// on it would read as broken. pool.scrub.scrub is the verified job that
-	// starts, stops or pauses one on demand. Both are deprecated in 26.0 in
-	// favour of zpool.scrub.run, which v25.10 does not document.
-	'pool.scrub.scrub': { tier: 2, job: true, verified: true },
+  // ── storage: tier 2 ──────────────────────────────────────────────────────
+  // §5.5 names pool.scrub.run, which is deliberately NOT listed: it is not a
+  // job (this map had it wrong) and it silently does nothing unless the last
+  // scrub is older than its 35-day threshold, so a "start scrub" button built
+  // on it would read as broken. pool.scrub.scrub is the verified job that
+  // starts, stops or pauses one on demand. Both are deprecated in 26.0 in
+  // favour of zpool.scrub.run, which v25.10 does not document.
+  "pool.scrub.scrub": { tier: 2, job: true, verified: true },
 
-	// ── datasets reads (§5.6) ────────────────────────────────────────────────
-	'pool.dataset.query': { tier: 'read' },
-	'pool.dataset.details': { tier: 'read' },
-	'pool.dataset.snapshot_count': { tier: 'read' },
-	'pool.dataset.get_quota': { tier: 'read' },
-	'pool.snapshot.query': { tier: 'read' },
-	'filesystem.stat': { tier: 'read', verified: true },
-	'filesystem.listdir': { tier: 'read', verified: true },
+  // ── datasets reads (§5.6) ────────────────────────────────────────────────
+  "pool.dataset.query": { tier: "read" },
+  "pool.dataset.details": { tier: "read" },
+  "pool.dataset.snapshot_count": { tier: "read" },
+  "pool.dataset.get_quota": { tier: "read" },
+  "pool.snapshot.query": { tier: "read" },
+  "filesystem.stat": { tier: "read", verified: true },
+  "filesystem.listdir": { tier: "read", verified: true },
 
-	// ── datasets / filesystem: tier 2 ────────────────────────────────────────
-	// Verified against v25.10: dataset creation and mkdir return synchronously —
-	// only chown is a job. Getting this wrong would send them down the wrong
-	// call path entirely.
-	'pool.dataset.create': { tier: 2, verified: true },
-	'pool.dataset.set_quota': { tier: 2 },
-	'pool.dataset.lock': { tier: 2, job: true },
-	'pool.dataset.unlock': { tier: 2, job: true },
-	'filesystem.mkdir': { tier: 2, verified: true },
-	'filesystem.chown': { tier: 2, job: true, verified: true }
+  // ── datasets / filesystem: tier 2 ────────────────────────────────────────
+  // Verified against v25.10: dataset creation and mkdir return synchronously —
+  // only chown is a job. Getting this wrong would send them down the wrong
+  // call path entirely.
+  "pool.dataset.create": { tier: 2, verified: true },
+  "pool.dataset.set_quota": { tier: 2 },
+  "pool.dataset.lock": { tier: 2, job: true },
+  "pool.dataset.unlock": { tier: 2, job: true },
+  "filesystem.mkdir": { tier: 2, verified: true },
+  "filesystem.chown": { tier: 2, job: true, verified: true },
 };
 
 /**
@@ -143,44 +149,44 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
  * refused with a distinct message. Not exposed behind any flag or confirmation.
  */
 export const DENYLIST: ReadonlySet<string> = new Set([
-	// storage restructuring / disk destruction (§5.5)
-	'pool.create',
-	'pool.expand',
-	'pool.remove',
-	'pool.replace',
-	'pool.offline',
-	'pool.export',
-	'disk.wipe',
-	// system / config (§6 tier 3)
-	'system.reboot',
-	'system.shutdown',
-	'update.run',
-	'config.reset'
+  // storage restructuring / disk destruction (§5.5)
+  "pool.create",
+  "pool.expand",
+  "pool.remove",
+  "pool.replace",
+  "pool.offline",
+  "pool.export",
+  "disk.wipe",
+  // system / config (§6 tier 3)
+  "system.reboot",
+  "system.shutdown",
+  "update.run",
+  "config.reset",
 ]);
 
 export class MethodNotAllowedError extends Error {
-	readonly method: string;
-	constructor(method: string, reason: string) {
-		super(`refused middleware method "${method}": ${reason}`);
-		this.name = 'MethodNotAllowedError';
-		this.method = method;
-	}
+  readonly method: string;
+  constructor(method: string, reason: string) {
+    super(`refused middleware method "${method}": ${reason}`);
+    this.name = "MethodNotAllowedError";
+    this.method = method;
+  }
 }
 
 /** Throws unless `method` is on the allowlist. Returns its spec when allowed. */
 export function assertAllowed(method: string): MethodSpec {
-	const spec = ALLOWLIST[method];
-	if (spec) return spec;
-	const reason = DENYLIST.has(method)
-		? 'destructive method that is never exposed (§6 tier 3)'
-		: 'not on the allowlist (§6)';
-	throw new MethodNotAllowedError(method, reason);
+  const spec = ALLOWLIST[method];
+  if (spec) return spec;
+  const reason = DENYLIST.has(method)
+    ? "destructive method that is never exposed (§6 tier 3)"
+    : "not on the allowlist (§6)";
+  throw new MethodNotAllowedError(method, reason);
 }
 
 export function isAllowed(method: string): boolean {
-	return method in ALLOWLIST;
+  return method in ALLOWLIST;
 }
 
 export function isJobMethod(method: string): boolean {
-	return ALLOWLIST[method]?.job === true;
+  return ALLOWLIST[method]?.job === true;
 }
