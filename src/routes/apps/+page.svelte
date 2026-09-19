@@ -7,9 +7,11 @@
 	import ConfirmSheet from '$lib/components/ConfirmSheet.svelte';
 	import OptionSheet from '$lib/components/OptionSheet.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import {
 		postAction,
 		confirmMessage,
+		matchesAppQuery,
 		resolveUpdateAction,
 		VERB,
 		GERUND,
@@ -30,6 +32,9 @@
 	let overrides = $state<Record<string, Partial<AppRecord>>>({});
 	let extras = $state<AppRecord[]>([]);
 	let removed = $state<string[]>([]);
+	/** The search box. Local state, not a URL param: it's a way to find one row
+	 * in a long list, not a view worth linking to or restoring on reload. */
+	let query = $state('');
 	let filter = $state<Filter>('all');
 	// Name is the default: a stable alphabetical list means a row doesn't jump
 	// when its state changes under you (§5.1 offers state/name/recent).
@@ -80,7 +85,7 @@
 	const pendingUpdates = $derived(apps.filter(hasUpdate).length);
 
 	const filtered = $derived.by(() => {
-		let list = [...apps];
+		let list = apps.filter((a) => matchesAppQuery(a.name, query));
 		if (filter === 'running') list = list.filter((a) => a.state === 'RUNNING');
 		else if (filter === 'stopped')
 			list = list.filter((a) => a.state === 'STOPPED' || a.state === 'CRASHED');
@@ -290,6 +295,27 @@
 		{/if}
 	</div>
 {:else}
+	<div class="search">
+		<Icon name="search" size={16} />
+		<input
+			type="search"
+			bind:value={query}
+			placeholder="Search apps"
+			aria-label="Search apps by name"
+			autocapitalize="off"
+			autocorrect="off"
+			autocomplete="off"
+			spellcheck="false"
+			enterkeyhint="search"
+			onkeydown={(e) => {
+				if (e.key === 'Escape') query = '';
+			}}
+		/>
+		{#if query}
+			<button class="clear" onclick={() => (query = '')} aria-label="Clear search">×</button>
+		{/if}
+	</div>
+
 	<div class="controls">
 		<button class="control" aria-haspopup="dialog" onclick={() => (filterOpen = true)}>
 			<span class="ck">Filter</span>
@@ -305,7 +331,21 @@
 		<Skeleton rows={4} />
 		<p class="dim center">No apps installed.</p>
 	{:else if filtered.length === 0}
-		<p class="dim center">No apps match this filter.</p>
+		<!--
+			Which control emptied the list decides what to offer: clearing the
+			search is one tap, while "no match for this filter" sends you to the
+			wrong control and you try the search again.
+		-->
+		{#if query}
+			<p class="dim center">
+				No apps match “{query}”{filter === 'all' ? '' : ` in ${filterLabel.toLowerCase()}`}.
+			</p>
+			<p class="center">
+				<button class="linkish" onclick={() => (query = '')}>Clear search</button>
+			</p>
+		{:else}
+			<p class="dim center">No apps match this filter.</p>
+		{/if}
 	{:else}
 		<ul class="list">
 			{#each filtered as app (app.id)}
@@ -459,6 +499,72 @@
 		color: var(--text);
 	}
 
+	/*
+	 * The search field sits above the filter/sort pair rather than beside them:
+	 * a text input squeezed into a third of a phone's width shows about six
+	 * characters, which is not enough to see what you typed.
+	 */
+	.search {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 10px 16px 0;
+		padding: 0 10px;
+		border-radius: var(--r-sm);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text-faint);
+	}
+	.search:focus-within {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.search input {
+		flex: 1;
+		min-width: 0;
+		min-height: var(--tap);
+		border: 0;
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 15px;
+	}
+	.search input:focus {
+		outline: none;
+	}
+	.search input::placeholder {
+		color: var(--text-faint);
+	}
+	/* WebKit draws its own clear affordance on type="search"; ours is the one
+	   that matches the rest of the app, so suppress the duplicate. */
+	.search input::-webkit-search-cancel-button,
+	.search input::-webkit-search-decoration {
+		-webkit-appearance: none;
+		appearance: none;
+	}
+	.clear {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		flex: none;
+		border: 0;
+		border-radius: 50%;
+		background: var(--surface-3, rgba(255, 255, 255, 0.08));
+		color: var(--text-dim);
+		font-size: 18px;
+		line-height: 1;
+	}
+	.linkish {
+		border: 0;
+		background: none;
+		padding: 8px;
+		color: var(--accent);
+		font: inherit;
+		font-weight: 600;
+		text-decoration: underline;
+	}
 	.controls {
 		display: grid;
 		grid-template-columns: 1fr 1fr;

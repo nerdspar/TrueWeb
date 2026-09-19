@@ -13,7 +13,8 @@
 		| 'apps'
 		| 'bell'
 		| 'update'
-		| 'activity';
+		| 'activity'
+		| 'search';
 
 	let { name, size = 22 }: { name: IconName; size?: number } = $props();
 </script>
@@ -57,6 +58,10 @@
 	{:else if name === 'activity'}
 		<!-- Work in progress. -->
 		<path d="M3.5 12h3.2l2.1-5.4 3.4 10.8 2.3-5.4h5" />
+	{:else if name === 'search'}
+		<!-- A magnifier, sized to sit inside a text field. -->
+		<circle cx="10.8" cy="10.8" r="6.3" />
+		<path d="M15.5 15.5l4.2 4.2" />
 	{:else}
 		<!-- Four tiles, for apps. -->
 		<rect x="3.4" y="3.4" width="7.2" height="7.2" rx="2" />
