@@ -33,11 +33,18 @@
 	--r-lg: 20px;
 	--shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 
-	/* Safe-area insets (notch + home indicator) */
+	/* Safe-area insets (notch + home indicator). --sa-bottom gets a standalone
+	   override below: without viewport-fit=cover (dropped to kill the iOS top blur)
+	   env() reports 0, so we reserve the home-indicator height explicitly there. */
 	--sa-top: env(safe-area-inset-top, 0px);
 	--sa-bottom: env(safe-area-inset-bottom, 0px);
 	--sa-left: env(safe-area-inset-left, 0px);
 	--sa-right: env(safe-area-inset-right, 0px);
+
+	/* Opaque status-bar tint strip (element in app.html). A little into the content
+	   from the top inset, where the blur ramp / status-bar shadow lands. Its job is
+	   to be present for iOS to sample, not to physically cover the whole ramp. */
+	--status-tint-h: calc(env(safe-area-inset-top, 0px) + 10px);
 
 	/* Bottom nav height, so scroll areas can pad clear of it */
 	--nav-h: 62px;
@@ -48,9 +55,41 @@
 	--mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, monospace;
 }
 
+/* Installed PWA only: with no viewport-fit=cover, env(safe-area-inset-bottom) is 0,
+   so reserve the iOS portrait home-indicator height. `max()` yields to a larger real
+   inset if cover ever returns. Everything that clears the home indicator — the nav,
+   toasts, the updates action bar, every bottom sheet — reads --sa-bottom, so this one
+   override fixes them all. A browser tab keeps the plain env() value. */
+@media (display-mode: standalone) {
+	:root {
+		--sa-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
+	}
+}
+
 * {
 	box-sizing: border-box;
 	-webkit-tap-highlight-color: transparent;
+}
+
+/* Status-bar tint strip (element in app.html). Invisible except in an installed PWA
+   in portrait, where a real opaque element pinned to the top edge makes iOS 26+/27
+   sample it as solid status-bar chrome and drop the top blur ramp — the tight fix,
+   not a content push. Opaque --bg so it also colours the status bar to match. */
+.status-tint {
+	display: none;
+}
+@media (display-mode: standalone) and (orientation: portrait) {
+	.status-tint {
+		display: block;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--status-tint-h);
+		z-index: 18; /* above page content + sticky headers (≤15), below nav (20) and sheets (40+) */
+		pointer-events: none;
+		background: var(--bg);
+	}
 }
 
 html,
