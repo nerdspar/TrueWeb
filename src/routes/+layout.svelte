@@ -70,7 +70,7 @@
 				href={tab.href}
 				aria-current={isActive(tab.href) ? 'page' : undefined}
 			>
-				<Icon name={tab.icon} />
+				<Icon name={tab.icon} size={24} />
 				<span class="label">{tab.label}</span>
 			</a>
 		{/each}
