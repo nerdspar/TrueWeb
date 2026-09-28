@@ -46,8 +46,9 @@
 	   to be present for iOS to sample, not to physically cover the whole ramp. */
 	--status-tint-h: calc(env(safe-area-inset-top, 0px) + 10px);
 
-	/* Bottom nav height, so scroll areas can pad clear of it */
-	--nav-h: 62px;
+	/* Bottom nav height (content band), so scroll areas can pad clear of it.
+	   56px is the shared tab-bar height across the apps. */
+	--nav-h: 56px;
 
 	--tap: 44px;
 	--font:
