@@ -6,115 +6,131 @@
  * available via client.call/callJob/subscribe; this module is the curated,
  * verified surface M1 exercises.
  */
-import type { TrueNasClient, AuthMe } from './client.ts';
-import type { Job } from './jobs.ts';
-import type { CollectionUpdate } from './protocol.ts';
+import type { TrueNasClient, AuthMe } from "./client.ts";
+import type { Job } from "./jobs.ts";
+import type { CollectionUpdate } from "./protocol.ts";
 
 /** app.query state enum, verified against api_methods_app.query.html. */
-export type AppState = 'CRASHED' | 'DEPLOYING' | 'RUNNING' | 'STOPPED' | 'STOPPING';
+export type AppState =
+  "CRASHED" | "DEPLOYING" | "RUNNING" | "STOPPED" | "STOPPING";
 
 export interface AppRecord {
-	id: string;
-	name: string;
-	state: AppState;
-	upgrade_available?: boolean;
-	image_updates_available?: boolean;
-	human_version?: string;
-	custom_app?: boolean;
+  id: string;
+  name: string;
+  state: AppState;
+  upgrade_available?: boolean;
+  image_updates_available?: boolean;
+  human_version?: string;
+  custom_app?: boolean;
 }
 
 /** The trimmed field set the app list needs (§5.1). `select` keeps payloads small (§3.6). */
 const APP_LIST_FIELDS = [
-	'id',
-	'name',
-	'state',
-	'upgrade_available',
-	'image_updates_available',
-	'human_version',
-	'custom_app'
+  "id",
+  "name",
+  "state",
+  "upgrade_available",
+  "image_updates_available",
+  "human_version",
+  "custom_app",
 ];
 
 /** docker.status service states, verified against api_methods_docker.status.html. */
 export type DockerServiceStatus =
-	| 'PENDING'
-	| 'RUNNING'
-	| 'STOPPED'
-	| 'INITIALIZING'
-	| 'STOPPING'
-	| 'UNCONFIGURED'
-	| 'FAILED'
-	| 'MIGRATING'
-	| 'MIGRATION_FAILED';
+  | "PENDING"
+  | "RUNNING"
+  | "STOPPED"
+  | "INITIALIZING"
+  | "STOPPING"
+  | "UNCONFIGURED"
+  | "FAILED"
+  | "MIGRATING"
+  | "MIGRATION_FAILED";
 
 export interface DockerStatus {
-	status: DockerServiceStatus;
-	description: string;
+  status: DockerServiceStatus;
+  description: string;
 }
 
 /** auth.me — the currently logged-in user. Verified: no params. */
 export function whoami(client: TrueNasClient): Promise<AuthMe> {
-	return client.call<AuthMe>('auth.me', []);
+  return client.call<AuthMe>("auth.me", []);
 }
 
 /** docker.status — Apps-service health for the §5.1 banner. Verified: no params. */
 export function dockerStatus(client: TrueNasClient): Promise<DockerStatus> {
-	return client.call<DockerStatus>('docker.status', []);
+  return client.call<DockerStatus>("docker.status", []);
 }
 
 /** app.query — list apps with state. Verified: [filters, options]. */
 export function listApps(client: TrueNasClient): Promise<AppRecord[]> {
-	return client.call<AppRecord[]>('app.query', [[], { select: APP_LIST_FIELDS, order_by: ['name'] }]);
+  return client.call<AppRecord[]>("app.query", [
+    [],
+    { select: APP_LIST_FIELDS, order_by: ["name"] },
+  ]);
 }
 
 /** app.start — verified job, params [app_name]. */
-export function startApp(client: TrueNasClient, name: string, onProgress?: (job: Job) => void) {
-	return client.callJob('app.start', [name], onProgress);
+export function startApp(
+  client: TrueNasClient,
+  name: string,
+  onProgress?: (job: Job) => void,
+) {
+  return client.callJob("app.start", [name], onProgress);
 }
 
 /** app.stop — verified job, params [app_name]. */
-export function stopApp(client: TrueNasClient, name: string, onProgress?: (job: Job) => void) {
-	return client.callJob('app.stop', [name], onProgress);
+export function stopApp(
+  client: TrueNasClient,
+  name: string,
+  onProgress?: (job: Job) => void,
+) {
+  return client.callJob("app.stop", [name], onProgress);
 }
 
 /** app.redeploy — verified job, params [app_name]. */
-export function redeployApp(client: TrueNasClient, name: string, onProgress?: (job: Job) => void) {
-	return client.callJob('app.redeploy', [name], onProgress);
+export function redeployApp(
+  client: TrueNasClient,
+  name: string,
+  onProgress?: (job: Job) => void,
+) {
+  return client.callJob("app.redeploy", [name], onProgress);
 }
 
 /* ── detail view (§5.1) ─────────────────────────────────────────────────── */
 
 /** A container of an app. Verified: api_methods_app.container_ids.html. */
 export interface ContainerInfo {
-	id: string;
-	service_name: string;
-	image: string;
-	state: 'running' | 'exited' | 'crashed' | 'created' | 'starting';
+  id: string;
+  service_name: string;
+  image: string;
+  state: "running" | "exited" | "crashed" | "created" | "starting";
 }
 
 /** Per-app stats pushed by the app.stats event. Verified: api_events_app.stats.html. */
 export interface AppStats {
-	app_name: string;
-	cpu_usage: number;
-	memory: number;
-	networks: { interface_name: string; rx_bytes: number; tx_bytes: number }[];
-	blkio: { read: number; write: number };
+  app_name: string;
+  cpu_usage: number;
+  memory: number;
+  networks: { interface_name: string; rx_bytes: number; tx_bytes: number }[];
+  blkio: { read: number; write: number };
 }
 
 /** One log line from app.container_log_follow. Verified: api_events_…html. */
 export interface LogLine {
-	data: string;
-	timestamp: string | null;
+  data: string;
+  timestamp: string | null;
 }
 
 /** The full app entry. Only fields we actually render are typed; the rest of
  *  the AppEntry is passed through untyped rather than guessed at. */
 export interface AppDetail extends AppRecord {
-	version?: string;
-	notes?: string | null;
-	metadata?: Record<string, unknown>;
-	active_workloads?: Record<string, unknown>;
-	portals?: Record<string, string>;
-	version_details?: Record<string, unknown> | null;
+  version?: string;
+  notes?: string | null;
+  metadata?: Record<string, unknown>;
+  active_workloads?: Record<string, unknown>;
+  portals?: Record<string, string>;
+  version_details?: Record<string, unknown> | null;
 }
 
 /**
@@ -122,13 +138,18 @@ export interface AppDetail extends AppRecord {
  * the release name; if a deployment ever diverges, fall back to a name query so
  * the detail page still resolves.
  */
-export async function getApp(client: TrueNasClient, name: string): Promise<AppDetail | null> {
-	try {
-		return await client.call<AppDetail>('app.get_instance', [name]);
-	} catch {
-		const rows = await client.call<AppDetail[]>('app.query', [[['name', '=', name]]]);
-		return rows?.[0] ?? null;
-	}
+export async function getApp(
+  client: TrueNasClient,
+  name: string,
+): Promise<AppDetail | null> {
+  try {
+    return await client.call<AppDetail>("app.get_instance", [name]);
+  } catch {
+    const rows = await client.call<AppDetail[]>("app.query", [
+      [["name", "=", name]],
+    ]);
+    return rows?.[0] ?? null;
+  }
 }
 
 /**
@@ -139,25 +160,25 @@ export async function getApp(client: TrueNasClient, name: string): Promise<AppDe
  * ones leaves nothing to look at.
  */
 export function containerIds(
-	client: TrueNasClient,
-	name: string,
-	aliveOnly = false
+  client: TrueNasClient,
+  name: string,
+  aliveOnly = false,
 ): Promise<Record<string, ContainerInfo>> {
-	return client.call<Record<string, ContainerInfo>>('app.container_ids', [
-		name,
-		{ alive_only: aliveOnly }
-	]);
+  return client.call<Record<string, ContainerInfo>>("app.container_ids", [
+    name,
+    { alive_only: aliveOnly },
+  ]);
 }
 
 /** A job's full detail, including whatever logs it managed to record. */
 export interface JobDetail {
-	id: number;
-	method: string;
-	state: string;
-	error: string | null;
-	exception: string | null;
-	logs_path: string | null;
-	logs_excerpt: string | null;
+  id: number;
+  method: string;
+  state: string;
+  error: string | null;
+  exception: string | null;
+  logs_path: string | null;
+  logs_excerpt: string | null;
 }
 
 /**
@@ -167,25 +188,38 @@ export interface JobDetail {
  * retrievable through the HTTP download endpoint, which this project doesn't
  * use (§3.1). The error and exception are what we can show.
  */
-export async function jobDetail(client: TrueNasClient, id: number): Promise<JobDetail | null> {
-	const rows = await client.call<JobDetail[]>('core.get_jobs', [
-		[['id', '=', id]],
-		{ select: ['id', 'method', 'state', 'error', 'exception', 'logs_path', 'logs_excerpt'] }
-	]);
-	return rows?.[0] ?? null;
+export async function jobDetail(
+  client: TrueNasClient,
+  id: number,
+): Promise<JobDetail | null> {
+  const rows = await client.call<JobDetail[]>("core.get_jobs", [
+    [["id", "=", id]],
+    {
+      select: [
+        "id",
+        "method",
+        "state",
+        "error",
+        "exception",
+        "logs_path",
+        "logs_excerpt",
+      ],
+    },
+  ]);
+  return rows?.[0] ?? null;
 }
 
 /** app.upgrade_summary result. Verified: api_methods_app.upgrade_summary.html. */
 export interface UpgradeSummary {
-	latest_version?: string;
-	latest_human_version?: string;
-	upgrade_version?: string;
-	upgrade_human_version?: string;
-	available_versions_for_upgrade?: {
-		version: string;
-		human_version: string;
-		changelog: string | null;
-	}[];
+  latest_version?: string;
+  latest_human_version?: string;
+  upgrade_version?: string;
+  upgrade_human_version?: string;
+  available_versions_for_upgrade?: {
+    version: string;
+    human_version: string;
+    changelog: string | null;
+  }[];
 }
 
 /**
@@ -193,50 +227,64 @@ export interface UpgradeSummary {
  * upgrading). Verified: (app_name, {app_version}); not a job.
  */
 export function upgradeSummary(
-	client: TrueNasClient,
-	name: string,
-	appVersion = 'latest'
+  client: TrueNasClient,
+  name: string,
+  appVersion = "latest",
 ): Promise<UpgradeSummary> {
-	return client.call<UpgradeSummary>('app.upgrade_summary', [name, { app_version: appVersion }]);
+  return client.call<UpgradeSummary>("app.upgrade_summary", [
+    name,
+    { app_version: appVersion },
+  ]);
 }
 
 /** app.rollback_versions — verified: (app_name) → version strings; not a job. */
-export function rollbackVersions(client: TrueNasClient, name: string): Promise<string[]> {
-	return client.call<string[]>('app.rollback_versions', [name]);
+export function rollbackVersions(
+  client: TrueNasClient,
+  name: string,
+): Promise<string[]> {
+  return client.call<string[]>("app.rollback_versions", [name]);
 }
 
 /** app.used_host_ips — verified: no params, returns {app_name: [ip, …]}. */
-export function usedHostIps(client: TrueNasClient): Promise<Record<string, string[]>> {
-	return client.call<Record<string, string[]>>('app.used_host_ips', []);
+export function usedHostIps(
+  client: TrueNasClient,
+): Promise<Record<string, string[]>> {
+  return client.call<Record<string, string[]>>("app.used_host_ips", []);
 }
 
 /** The app.stats event name. `interval` must be >= 2 seconds (verified). */
 export function statsEvent(intervalSeconds?: number): string {
-	return intervalSeconds ? `app.stats:${JSON.stringify({ interval: intervalSeconds })}` : 'app.stats';
+  return intervalSeconds
+    ? `app.stats:${JSON.stringify({ interval: intervalSeconds })}`
+    : "app.stats";
 }
 
 /** The parameterized app.container_log_follow event name (verified shape). */
-export function logFollowEvent(appName: string, containerId: string, tailLines = 500): string {
-	return `app.container_log_follow:${JSON.stringify({
-		app_name: appName,
-		container_id: containerId,
-		tail_lines: tailLines
-	})}`;
+export function logFollowEvent(
+  appName: string,
+  containerId: string,
+  tailLines = 500,
+): string {
+  return `app.container_log_follow:${JSON.stringify({
+    app_name: appName,
+    container_id: containerId,
+    tail_lines: tailLines,
+  })}`;
 }
 
 /* ── compose deploy + path provisioning (§5.2 / §5.6) ────────────────────── */
 
 /** filesystem.stat result. Verified: api_methods_filesystem.stat.html. */
 export interface StatData {
-	realpath: string;
-	type: 'DIRECTORY' | 'FILE' | 'SYMLINK' | 'OTHER';
-	uid: number;
-	gid: number;
-	mode: number;
-	acl: boolean;
-	is_mountpoint: boolean;
-	user: string | null;
-	group: string | null;
+  realpath: string;
+  type: "DIRECTORY" | "FILE" | "SYMLINK" | "OTHER";
+  uid: number;
+  gid: number;
+  mode: number;
+  acl: boolean;
+  is_mountpoint: boolean;
+  user: string | null;
+  group: string | null;
 }
 
 /**
@@ -244,22 +292,25 @@ export interface StatData {
  * exist: the middleware raises for a missing path, and "missing" is the normal,
  * expected answer here rather than a failure.
  */
-export async function statPath(client: TrueNasClient, path: string): Promise<StatData | null> {
-	try {
-		return await client.call<StatData>('filesystem.stat', [path]);
-	} catch {
-		return null;
-	}
+export async function statPath(
+  client: TrueNasClient,
+  path: string,
+): Promise<StatData | null> {
+  try {
+    return await client.call<StatData>("filesystem.stat", [path]);
+  } catch {
+    return null;
+  }
 }
 
 /** One entry from filesystem.listdir. Verified: api_methods_filesystem.listdir.html. */
 export interface DirEntry {
-	name: string;
-	path: string;
-	type: 'DIRECTORY' | 'FILE' | 'SYMLINK' | 'OTHER';
-	is_mountpoint: boolean;
-	uid: number;
-	gid: number;
+  name: string;
+  path: string;
+  type: "DIRECTORY" | "FILE" | "SYMLINK" | "OTHER";
+  is_mountpoint: boolean;
+  uid: number;
+  gid: number;
 }
 
 /**
@@ -270,12 +321,18 @@ export interface DirEntry {
  * Filtered to directories and trimmed with `select`, because an unconstrained
  * listing returns a very large object graph (§3.6).
  */
-export function listDir(client: TrueNasClient, path: string): Promise<DirEntry[]> {
-	return client.call<DirEntry[]>('filesystem.listdir', [
-		path,
-		[['type', '=', 'DIRECTORY']],
-		{ select: ['name', 'path', 'type', 'is_mountpoint', 'uid', 'gid'], order_by: ['name'] }
-	]);
+export function listDir(
+  client: TrueNasClient,
+  path: string,
+): Promise<DirEntry[]> {
+  return client.call<DirEntry[]>("filesystem.listdir", [
+    path,
+    [["type", "=", "DIRECTORY"]],
+    {
+      select: ["name", "path", "type", "is_mountpoint", "uid", "gid"],
+      order_by: ["name"],
+    },
+  ]);
 }
 
 /**
@@ -291,24 +348,31 @@ export function listDir(client: TrueNasClient, path: string): Promise<DirEntry[]
  * POSIX or OFF`. It also happens to be exactly what §5.2 asks for: no ACLs on
  * datasets created this way, since host-path binds here are used without them.
  */
-export function createDataset(client: TrueNasClient, datasetName: string): Promise<unknown> {
-	return client.call('pool.dataset.create', [{ name: datasetName, aclmode: 'DISCARD' }]);
+export function createDataset(
+  client: TrueNasClient,
+  datasetName: string,
+): Promise<unknown> {
+  return client.call("pool.dataset.create", [
+    { name: datasetName, aclmode: "DISCARD" },
+  ]);
 }
 
 /** filesystem.mkdir — verified: [{path, mode}]. Not a job. */
 export function mkdir(client: TrueNasClient, path: string): Promise<unknown> {
-	return client.call('filesystem.mkdir', [{ path, mode: '755' }]);
+  return client.call("filesystem.mkdir", [{ path, mode: "755" }]);
 }
 
 /** filesystem.chown — verified: [{path, uid, gid, options}]. Is a job. */
 export function chownPath(
-	client: TrueNasClient,
-	path: string,
-	uid: number,
-	gid: number,
-	recursive = true
+  client: TrueNasClient,
+  path: string,
+  uid: number,
+  gid: number,
+  recursive = true,
 ) {
-	return client.callJob('filesystem.chown', [{ path, uid, gid, options: { recursive } }]);
+  return client.callJob("filesystem.chown", [
+    { path, uid, gid, options: { recursive } },
+  ]);
 }
 
 /**
@@ -316,19 +380,27 @@ export function chownPath(
  * and a job. custom_app must be true, with the YAML in
  * custom_compose_config_string (§3.5).
  */
-export function createCustomApp(client: TrueNasClient, appName: string, composeYaml: string) {
-	return client.callJob('app.create', [
-		{ app_name: appName, custom_app: true, custom_compose_config_string: composeYaml }
-	]);
+export function createCustomApp(
+  client: TrueNasClient,
+  appName: string,
+  composeYaml: string,
+) {
+  return client.callJob("app.create", [
+    {
+      app_name: appName,
+      custom_app: true,
+      custom_compose_config_string: composeYaml,
+    },
+  ]);
 }
 
 export interface DeleteAppOptions {
-	/** Remove the Docker images too. The middleware defaults this to true. */
-	removeImages?: boolean;
-	/** Remove TrueNAS-managed storage (ix-volumes). Destroys app data. */
-	removeData?: boolean;
-	/** Custom apps are refused without this, since they may hold config. */
-	force?: boolean;
+  /** Remove the Docker images too. The middleware defaults this to true. */
+  removeImages?: boolean;
+  /** Remove TrueNAS-managed storage (ix-volumes). Destroys app data. */
+  removeData?: boolean;
+  /** Custom apps are refused without this, since they may hold config. */
+  force?: boolean;
 }
 
 /**
@@ -339,30 +411,82 @@ export interface DeleteAppOptions {
  * upstream and stays false here, and forcing it needs the second flag because
  * the middleware refuses volumes that contain data.
  */
-export function deleteApp(client: TrueNasClient, name: string, opts: DeleteAppOptions = {}) {
-	const removeData = opts.removeData === true;
-	return client.callJob('app.delete', [
-		name,
-		{
-			remove_images: opts.removeImages !== false,
-			remove_ix_volumes: removeData,
-			force_remove_ix_volumes: removeData,
-			force_remove_custom_app: opts.force === true
-		}
-	]);
+export function deleteApp(
+  client: TrueNasClient,
+  name: string,
+  opts: DeleteAppOptions = {},
+) {
+  const removeData = opts.removeData === true;
+  return client.callJob("app.delete", [
+    name,
+    {
+      remove_images: opts.removeImages !== false,
+      remove_ix_volumes: removeData,
+      force_remove_ix_volumes: removeData,
+      force_remove_custom_app: opts.force === true,
+    },
+  ]);
 }
 
 /** app.used_ports — verified: no params, every port in use by any app. */
 export function usedPorts(client: TrueNasClient): Promise<number[]> {
-	return client.call<number[]>('app.used_ports', []);
+  return client.call<number[]>("app.used_ports", []);
 }
 
 /** Subscribe to live app state changes (§3.4). */
-export function watchApps(client: TrueNasClient, handler: (u: CollectionUpdate) => void): () => void {
-	return client.subscribe('app.query', handler);
+export function watchApps(
+  client: TrueNasClient,
+  handler: (u: CollectionUpdate) => void,
+): () => void {
+  return client.subscribe("app.query", handler);
 }
 
 /** Subscribe to raw job progress for every mutating action on the box. */
-export function watchJobs(client: TrueNasClient, handler: (u: CollectionUpdate) => void): () => void {
-	return client.subscribe('core.get_jobs', handler);
+export function watchJobs(
+  client: TrueNasClient,
+  handler: (u: CollectionUpdate) => void,
+): () => void {
+  return client.subscribe("core.get_jobs", handler);
+}
+
+/**
+ * When each app was last deployed, derived from its compose network.
+ *
+ * There is no container start time anywhere in the 25.10 middleware — not on
+ * app.query, not on app.container_ids, and there is no docker-inspect
+ * passthrough — so an app's real uptime cannot be read. What can be read is the
+ * creation time of the compose project's network, which Docker stamps when the
+ * project is brought up.
+ *
+ * What that means in practice, and the reason this is called "deployed" rather
+ * than "started": the network is created on deploy, edit-and-redeploy, or
+ * update, and it survives a plain restart. So this timestamp tracks the work you
+ * did to an app, not the last time its process happened to bounce.
+ *
+ * It is also only present while the app is up: stopping an app tears the network
+ * down and the time is gone until it runs again. Callers get no entry for those
+ * apps rather than a zero, so they can say "—" instead of claiming 1970.
+ */
+const APP_NETWORK = /^ix-(.+?)_[^_]*$/;
+
+export type DockerNetwork = { name?: string; created?: string };
+
+export function deployTimes(
+  client: TrueNasClient,
+): Promise<Map<string, number>> {
+  return client
+    .call<DockerNetwork[]>("docker.network.query", [])
+    .then((networks) => {
+      const byApp = new Map<string, number>();
+      for (const net of networks) {
+        const match = APP_NETWORK.exec(net.name ?? "");
+        if (!match || !net.created) continue;
+        const at = new Date(net.created).getTime();
+        if (Number.isNaN(at)) continue;
+        // An app may own several networks; the newest is when it last came up.
+        const seen = byApp.get(match[1]);
+        if (seen === undefined || at > seen) byApp.set(match[1], at);
+      }
+      return byApp;
+    });
 }

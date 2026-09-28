@@ -82,6 +82,9 @@ export const ALLOWLIST: Readonly<Record<string, MethodSpec>> = {
 
   // ── docker / apps service (§5.1 health banner) ───────────────────────────
   "docker.status": { tier: "read", verified: true },
+  // Compose project networks carry a creation time, which is the only durable
+  // "when was this app last deployed" the middleware exposes — see deployTimes.
+  "docker.network.query": { tier: "read", verified: true },
   "docker.state": { tier: "read", verified: true },
 
   // ── alerts ───────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import {
+		formatAgo,
 		postAction,
 		confirmMessage,
 		matchesAppQuery,
@@ -43,9 +44,15 @@
 	let filterOpen = $state(false);
 	let toastMsg = $state('');
 
-	// When we last saw each app change state (from the live stream), for the
-	// "recently changed" sort. Populated by SSE, so it reflects this session.
-	let changedAt = $state<Record<string, number>>({});
+	/**
+	 * When each app was last deployed, from the server (its compose network's
+	 * creation time). This replaced a session-local map fed by the live stream:
+	 * that one reset on every reload, so the sort it powered forgot everything
+	 * the moment you refreshed — exactly when you most wanted it.
+	 *
+	 * Apps that are stopped have no network and so no entry here; they sort last.
+	 */
+	const deployedAt = $derived(data.deployed ?? {});
 
 	// Rows with an action in flight: appId → the action + its job.
 	let pending = $state<Record<string, { action: Action; pct?: number }>>({});
@@ -94,7 +101,7 @@
 		list.sort((a, b) => {
 			if (sort === 'name') return a.name.localeCompare(b.name);
 			if (sort === 'recent')
-				return (changedAt[b.id] ?? 0) - (changedAt[a.id] ?? 0) || a.name.localeCompare(b.name);
+				return (deployedAt[b.name] ?? 0) - (deployedAt[a.name] ?? 0) || a.name.localeCompare(b.name);
 			return (STATE_ORDER[a.state] ?? 9) - (STATE_ORDER[b.state] ?? 9) || a.name.localeCompare(b.name);
 		});
 		return list;
@@ -130,7 +137,7 @@
 	const SORT_OPTS = [
 		{ key: 'state', label: 'State', hint: 'Stopped & erroring first' },
 		{ key: 'name', label: 'Name', hint: 'A–Z' },
-		{ key: 'recent', label: 'Recently changed', hint: 'Most recent first' }
+		{ key: 'recent', label: 'Recently deployed', hint: 'Newest first; stopped apps last' }
 	];
 	const sortLabel = $derived(SORT_OPTS.find((o) => o.key === sort)?.label ?? 'Name');
 
@@ -161,7 +168,6 @@
 				}
 			];
 		}
-		changedAt = { ...changedAt, [id]: Date.now() };
 	}
 
 	function onJobEvent(job: { id?: number; state?: string; method?: string; progress?: { percent?: number } }) {
@@ -362,6 +368,19 @@
 									{#if app.custom_app}<span class="pill ghost" title="Custom (compose) app">custom</span>{/if}
 								</div>
 								{#if app.human_version}<div class="ver">{app.human_version}</div>{/if}
+								<!--
+									Shown only while this sort is active: without it the order looks
+									arbitrary, and the rest of the time it's a line of noise on every
+									row. Stopped apps say so rather than showing a stale time — their
+									network is torn down with them, so there is nothing to report.
+								-->
+								{#if sort === 'recent'}
+									<div class="ver deployed">
+										{deployedAt[app.name]
+											? `deployed ${formatAgo(new Date(deployedAt[app.name]).toISOString())}`
+											: 'not running — no deploy time'}
+									</div>
+								{/if}
 							</div>
 						</a>
 						{#if p}
@@ -646,6 +665,10 @@
 		align-items: center;
 		gap: 6px;
 		flex-wrap: wrap;
+	}
+	.deployed {
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 	.ver {
 		font-size: 12px;
