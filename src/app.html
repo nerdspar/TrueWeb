@@ -2,10 +2,13 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta
-			name="viewport"
-			content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
-		/>
+		<!-- Deliberately NOT viewport-fit=cover. With `cover` the web view spans the
+		     whole screen and iOS 26+/27 draws its uncloseable "Liquid Glass" scroll-
+		     edge blur over the top of a standalone PWA. Without it, iOS keeps content
+		     inside the safe area (below the status bar) so the blur ramp has nothing
+		     to fall on; the status-bar tint strip below finishes the job. --sa-bottom
+		     then reads 0, so app.css reserves the home-indicator height in standalone. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 		<!-- Single dark theme (§8): no switcher, so the chrome is pinned dark. -->
 		<meta name="color-scheme" content="dark" />
 		<meta name="theme-color" content="#07080B" />
@@ -27,14 +30,22 @@
 
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="mobile-web-app-capable" content="yes" />
-		<!-- black-translucent lets content scroll under the status bar; app.css
-		     holds content clear of that band via the safe-area insets. -->
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<!-- `default` (opaque), not black-translucent. iOS 26+/27 draws the uncloseable
+		     "Liquid Glass" top-edge blur on a standalone PWA under black-translucent;
+		     `default` gives an opaque status bar coloured by theme-color, and no-cover
+		     (above) keeps content out of that strip. Frozen at install — takes effect
+		     only after the app is removed and re-added to the Home Screen. -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<meta name="apple-mobile-web-app-title" content="TrueWeb" />
 
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="tap">
+		<!-- Status-bar tint strip. A real, fixed, opaque element at the very top edge:
+		     iOS 26+/27 samples it as solid status-bar chrome and suppresses the top
+		     blur ramp. Standalone + portrait only (see app.css); display:none in a
+		     browser tab. -->
+		<div class="status-tint" aria-hidden="true"></div>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
