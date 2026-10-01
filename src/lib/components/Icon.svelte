@@ -14,7 +14,8 @@
 		| 'bell'
 		| 'update'
 		| 'activity'
-		| 'search';
+		| 'search'
+		| 'settings';
 
 	let { name, size = 22 }: { name: IconName; size?: number } = $props();
 </script>
@@ -58,6 +59,10 @@
 	{:else if name === 'activity'}
 		<!-- Work in progress. -->
 		<path d="M3.5 12h3.2l2.1-5.4 3.4 10.8 2.3-5.4h5" />
+	{:else if name === 'settings'}
+		<!-- Sliders rather than a cog: it reads at 20px, a cog's teeth don't. -->
+		<path d="M4 7.5h10" /><path d="M17.5 7.5H20" /><circle cx="15.75" cy="7.5" r="1.9" />
+		<path d="M4 16.5h4" /><path d="M11.5 16.5H20" /><circle cx="9.75" cy="16.5" r="1.9" />
 	{:else if name === 'search'}
 		<!-- A magnifier, sized to sit inside a text field. -->
 		<circle cx="10.8" cy="10.8" r="6.3" />

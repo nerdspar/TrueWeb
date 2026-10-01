@@ -32,20 +32,20 @@
 	// All four tabs ship as of M5. The dashboard is the default: it owns `/`, so
 	// it's also where the installed PWA launches (manifest start_url).
 	const tabs = [
-		{ href: '/', label: 'Dashboard', icon: 'dashboard' },
+		{ href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
 		{ href: '/storage', label: 'Storage', icon: 'storage' },
 		{ href: '/datasets', label: 'Datasets', icon: 'datasets' },
 		{ href: '/apps', label: 'Apps', icon: 'apps' }
 	] as const;
 
 	/**
-	 * `/` is the dashboard, so it must match exactly — every path starts with it.
-	 * /updates belongs to the Apps tab: it's the bulk-update screen reached from
-	 * the apps list, and leaving no tab lit there looks like a dead end.
+	 * Every tab is now a real path, so the exact-match special case `/` used to
+	 * need is gone. /updates belongs to the Apps tab: it's the bulk-update screen
+	 * reached from the apps list, and leaving no tab lit there looks like a dead
+	 * end.
 	 */
 	const isActive = (href: string) => {
 		const path = page.url.pathname;
-		if (href === '/') return path === '/';
 		if (href === '/apps') return path.startsWith('/apps') || path.startsWith('/updates');
 		return path.startsWith(href);
 	};

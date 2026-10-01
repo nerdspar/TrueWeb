@@ -231,6 +231,9 @@
 				<Icon name="activity" size={20} />
 				{#if jobs.length > 0}<span class="badge accent">{jobs.length}</span>{/if}
 			</button>
+			<a class="glyph" href="/settings" aria-label="Settings" title="Settings">
+				<Icon name="settings" size={20} />
+			</a>
 		</div>
 	{/if}
 </header>

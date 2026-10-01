@@ -1,107 +1,15 @@
+import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
-import { getClient, serviceStatus } from "$lib/server/service";
-import {
-  listAlerts,
-  listPools,
-  platformInfo,
-  runningJobs,
-  systemInfo,
-  updateStatus,
-  type Alert,
-  type PlatformInfo,
-  type PoolEntry,
-  type RunningJob,
-  type SystemInfo,
-  type UpdateStatus,
-} from "$lib/server/dashboard";
-import { listDisks, type DiskEntry } from "$lib/server/storage";
+import { HOME_COOKIE, homePath } from "$lib/home";
 
 /**
- * Dashboard (§5.4).
+ * The launcher. `start_url` is `/`, so this is what the installed PWA opens;
+ * it renders nothing and forwards to the tab chosen in Settings.
  *
- * The live half — CPU, memory, network, disk I/O, pool capacity — arrives over
- * reporting.realtime and is not fetched here. What this loads is the half that
- * the realtime feed has no equivalent for: pool *health*, alerts, system
- * identity, and whether an OS update is waiting.
- *
- * Each call is allowed to fail on its own. A dashboard that renders nothing
- * because one of five reads was refused is worse than one that renders four
- * cards and says which one is missing — and with a scoped API key, a single
- * missing role is the likely reason.
+ * 302, not 301: the target changes whenever the setting changes, and a browser
+ * that cached a permanent redirect would pin the app to an old choice with no
+ * way back.
  */
-export const load: PageServerLoad = async () => {
-  const status = serviceStatus();
-
-  const base = {
-    reachable: false,
-    configured: status.configured,
-    reason:
-      status.error ??
-      (status.configured
-        ? "Connecting to TrueNAS…"
-        : "TrueNAS connection is not configured."),
-    system: null as SystemInfo | null,
-    platform: null as PlatformInfo | null,
-    pools: [] as PoolEntry[],
-    /** Only what the pool cards need: size per disk, to spot mixed capacity. */
-    disks: [] as { name: string; pool: string | null; size: number | null }[],
-    alerts: [] as Alert[],
-    update: null as UpdateStatus | null,
-    jobs: [] as RunningJob[],
-    /** Per-section failures, so the UI can say what it couldn't read. */
-    errors: {} as Record<string, string>,
-  };
-
-  if (!status.ready) return base;
-
-  const client = getClient();
-  const errors: Record<string, string> = {};
-  const fallible = async <T>(
-    key: string,
-    run: () => Promise<T>,
-    empty: T,
-  ): Promise<T> => {
-    try {
-      return await run();
-    } catch (err) {
-      errors[key] = (err as Error).message ?? "failed";
-      return empty;
-    }
-  };
-
-  const [system, platform, pools, disks, alerts, update, jobs] =
-    await Promise.all([
-      fallible("system", () => systemInfo(client), null as SystemInfo | null),
-      fallible(
-        "platform",
-        () => platformInfo(client),
-        null as PlatformInfo | null,
-      ),
-      fallible("pools", () => listPools(client), [] as PoolEntry[]),
-      fallible("disks", () => listDisks(client), [] as DiskEntry[]),
-      fallible("alerts", () => listAlerts(client), [] as Alert[]),
-      fallible(
-        "update",
-        () => updateStatus(client),
-        null as UpdateStatus | null,
-      ),
-      fallible("jobs", () => runningJobs(client), [] as RunningJob[]),
-    ]);
-
-  return {
-    reachable: true,
-    configured: true,
-    reason: "",
-    system,
-    platform,
-    pools,
-    // disk.query returns serials and models too; the dashboard needs neither,
-    // and a serial number is not something to ship to a browser for decoration.
-    disks: disks.map((d) => ({ name: d.name, pool: d.pool, size: d.size })),
-    // Dismissed alerts are not "active" (§5.4), so they don't ship to the client.
-    alerts: alerts.filter((a) => !a.dismissed),
-    update,
-    jobs,
-    errors,
-  };
+export const load: PageServerLoad = ({ cookies }) => {
+  redirect(302, homePath(cookies.get(HOME_COOKIE)));
 };
