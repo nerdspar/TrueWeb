@@ -233,3 +233,11 @@ implementation in places (notably §5.6 datasets), so treat the code as the sour
 of truth for what exists today.
 
 Pushing to `main` builds and publishes the image to GHCR via GitHub Actions.
+
+---
+
+## License
+
+[MIT](LICENSE) — use it, change it, ship it. No warranty: this is a homelab tool
+that can stop and delete apps on a NAS, so read [Security](#security) before you
+point it at anything you care about.
