@@ -49,12 +49,15 @@ ghcr.io/nerdspar/trueweb:latest
 ghcr.io/nerdspar/trueweb:sha-<short>
 ```
 
-GHCR packages are private by default. Either make the package public
-(**Package settings → Change visibility**), or log the NAS in once with a
-classic PAT that has `read:packages`:
+**This package is public** — `docker compose pull` works with no login. (Verified
+against the registry: an anonymous manifest fetch succeeds.)
+
+GHCR packages are private by default, so if you fork this and publish your own,
+either make the package public (**Package settings → Change visibility**) or log
+the NAS in once with a classic PAT that has `read:packages`:
 
 ```bash
-docker login ghcr.io -u nerdspar   # paste the PAT as the password
+docker login ghcr.io -u <your-github-user>   # paste the PAT as the password
 ```
 
 ---

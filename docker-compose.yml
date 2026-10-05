@@ -10,9 +10,9 @@
 #
 # ── 2. Paste your values at the ⬅ markers ────────────────────────────────────
 #
-# ── 3. Log in to GHCR once (private image) and launch ────────────────────────
-#        docker login ghcr.io -u nerdspar     # paste a read:packages PAT
-#        docker compose up -d
+# ── 3. Launch ────────────────────────────────────────────────────────────────
+#        docker compose pull && docker compose up -d
+#      The image is public on GHCR — no docker login or PAT needed.
 #      Then on the iPhone: http://<nas-ip>:8110 → Share → Add to Home Screen.
 # =============================================================================
 
